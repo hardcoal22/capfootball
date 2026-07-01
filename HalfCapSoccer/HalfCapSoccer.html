@@ -327,8 +327,9 @@ const snd={
 };
 
 // ── Input ────────────────────────────────────────────────────────────────────
-document.addEventListener('keydown',e=>{ e.preventDefault(); keys[e.key.toLowerCase()]=true; getAC(); });
-document.addEventListener('keyup',e=>{ e.preventDefault(); keys[e.key.toLowerCase()]=false; });
+function isTypingTarget(e){ const t=e.target.tagName; return t==='INPUT'||t==='TEXTAREA'; }
+document.addEventListener('keydown',e=>{ if(isTypingTarget(e))return; e.preventDefault(); keys[e.key.toLowerCase()]=true; getAC(); });
+document.addEventListener('keyup',e=>{ if(isTypingTarget(e))return; e.preventDefault(); keys[e.key.toLowerCase()]=false; });
 
 // ── Online (native WebSocket) ─────────────────────────────────────────────────
 function setStatus(txt,pulse=false){
