@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: capfootbale-server
+    env: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node index.js
+    plan: free
+    autoDeploy: true
