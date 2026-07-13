@@ -1,0 +1,2313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Slime Soccer</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:radial-gradient(ellipse at 50% 40%, #0f0c29, #302b63 60%, #24243e);
+  color:#fff; font-family:'Orbitron',sans-serif;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  min-height:100vh; overflow:hidden;
+}
+#stars-bg { position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:0; }
+#menu,#duration-menu,#online-menu,#end-screen {
+  display:flex; flex-direction:column; align-items:center; gap:20px;
+  position:relative; z-index:1;
+}
+#menu { width:min(1100px,95vw); }
+.menu-shell { display:flex; align-items:center; justify-content:center; gap:34px; width:100%; }
+.menu-actions { display:flex; flex-direction:column; align-items:center; gap:20px; min-width:0; }
+.menu-hof {
+  width:320px; min-height:280px; padding:16px 18px;
+  border:1px solid rgba(0,245,255,.24); border-radius:8px;
+  background:rgba(4,10,24,.46); box-shadow:0 0 22px rgba(0,245,255,.1);
+}
+.menu-hof h2 { font-size:1rem; text-align:left; margin-bottom:10px; }
+@media (max-width:900px){
+  .menu-shell { flex-direction:column; gap:18px; }
+  .menu-hof { width:min(420px,92vw); min-height:0; }
+}
+h1 {
+  font-size:3rem; font-weight:900;
+  background:linear-gradient(90deg,#00f5ff,#bf00ff,#ff006e,#00f5ff);
+  background-size:300%; -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  animation:shimmer 4s linear infinite;
+  filter:drop-shadow(0 0 24px rgba(0,245,255,0.5));
+}
+@keyframes shimmer{0%{background-position:0%}100%{background-position:300%}}
+h2 { font-size:1.5rem; color:#a0f0ff; text-shadow:0 0 12px #00f5ff; }
+.subtitle { font-size:0.75rem; letter-spacing:4px; color:#6080a0; }
+.btn {
+  padding:12px 32px;
+  background:linear-gradient(135deg,rgba(0,100,200,0.25),rgba(100,0,200,0.25));
+  border:2px solid rgba(0,245,255,0.5); border-radius:8px;
+  color:#fff; font-size:.9rem; cursor:pointer;
+  font-family:'Orbitron',sans-serif; text-transform:uppercase; letter-spacing:2px;
+  transition:all .2s; position:relative; overflow:hidden;
+  box-shadow:0 0 12px rgba(0,245,255,0.15),inset 0 0 12px rgba(0,245,255,0.04);
+}
+.btn::before {
+  content:''; position:absolute; inset:-50%;
+  background:linear-gradient(transparent,rgba(0,245,255,0.08),transparent);
+  transform:rotate(45deg) translateY(-100%); transition:.4s;
+}
+.btn:hover::before{transform:rotate(45deg) translateY(100%);}
+.btn:hover {
+  background:linear-gradient(135deg,rgba(0,100,200,0.55),rgba(100,0,200,0.55));
+  border-color:#00f5ff;
+  box-shadow:0 0 28px rgba(0,245,255,0.45),inset 0 0 18px rgba(0,245,255,0.1);
+  transform:translateY(-2px);
+}
+.btn-sm { padding:8px 20px; font-size:.75rem; background:rgba(40,40,60,0.5); border-color:rgba(120,120,180,0.35); }
+.row { display:flex; gap:14px; flex-wrap:wrap; justify-content:center; }
+#game-area { position:relative; z-index:1; display:flex; align-items:flex-start; gap:14px; }
+#game-main { display:flex; flex-direction:column; }
+#controls-panel {
+  display:flex; flex-direction:column; gap:16px;
+  padding:14px 16px;
+  background:rgba(0,0,0,0.35); border:1px solid rgba(0,245,255,0.15);
+  border-radius:10px; backdrop-filter:blur(6px);
+  width:130px; margin-top:48px; /* align with canvas top */
+  font-size:0.62rem; letter-spacing:1.5px; color:#8090b0;
+}
+#controls-panel .ctrl-section { display:flex; flex-direction:column; gap:8px; }
+#controls-panel .ctrl-title { font-size:0.58rem; letter-spacing:3px; font-weight:700; }
+#controls-panel .key {
+  display:inline-flex; align-items:center; justify-content:center;
+  background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.2);
+  border-radius:4px; padding:2px 6px; font-size:0.65rem;
+  font-family:'Orbitron',monospace; color:#c0d0e8; min-width:24px;
+}
+#controls-panel .ctrl-row { display:flex; align-items:center; gap:6px; line-height:1.6; }
+
+#hud {
+  width:1000px; padding:10px 28px;
+  display:flex; justify-content:space-between; align-items:center;
+  background:linear-gradient(90deg,rgba(0,80,200,0.18),rgba(80,0,200,0.18));
+  border:1px solid rgba(0,245,255,0.25); border-bottom:none;
+  border-radius:12px 12px 0 0; backdrop-filter:blur(8px);
+}
+.score-block { display:flex; flex-direction:column; align-items:center; gap:2px; }
+.score-label { font-size:0.6rem; letter-spacing:4px; opacity:0.6; }
+.score-val { font-size:2.2rem; font-weight:900; line-height:1; }
+#timer {
+  font-size:1.5rem; font-weight:700; font-family:'Orbitron',monospace;
+  color:#e0f0ff; text-shadow:0 0 8px rgba(200,220,255,0.6);
+  background:rgba(0,0,0,0.35); padding:4px 18px; border-radius:6px;
+  border:1px solid rgba(255,255,255,0.15);
+}
+#pause-btn {
+  display:none; position:absolute; left:50%; transform:translateX(-50%);
+  top:8px; z-index:4; min-width:94px; padding:7px 12px; font-size:.62rem;
+  background:rgba(6,18,34,.88); border:1px solid rgba(255,210,62,.55);
+  color:#ffe88a; border-radius:6px; font-family:'Orbitron',sans-serif;
+  letter-spacing:1px; cursor:pointer; box-shadow:0 0 14px rgba(255,210,62,.18);
+}
+#pause-btn.visible { display:block; }
+#pause-overlay {
+  display:none; position:absolute; inset:0; z-index:3; align-items:center; justify-content:center;
+  background:rgba(2,8,18,.46); color:#ffe88a; font-size:2rem; font-weight:900;
+  letter-spacing:8px; text-shadow:0 0 18px rgba(255,210,62,.7);
+  pointer-events:none;
+}
+#pause-overlay.visible { display:flex; }
+.cyan { color:#00f5ff; text-shadow:0 0 6px rgba(0,245,255,0.35); }
+.red  { color:#ff3366; text-shadow:0 0 6px rgba(255,51,102,0.35); }
+canvas#canvas {
+  display:block; border:1px solid rgba(0,245,255,0.2);
+  border-radius:0 0 10px 10px;
+  box-shadow:0 0 50px rgba(0,80,255,0.25),0 0 100px rgba(80,0,255,0.18);
+}
+.controls { color:#5070a0; font-size:.75rem; text-align:center; line-height:1.9; letter-spacing:1px; }
+.hidden { display:none !important; }
+
+/* Online panel */
+#room-panel {
+  background:rgba(0,0,0,0.4); border:1px solid rgba(0,245,255,0.3);
+  border-radius:10px; padding:18px 28px; text-align:center; min-width:280px;
+}
+#room-code {
+  display:block; font-size:2.8rem; font-weight:900; letter-spacing:10px;
+  color:#00f5ff; text-shadow:0 0 24px #00f5ff,0 0 48px rgba(0,245,255,0.4);
+  margin:8px 0;
+}
+.input-row { display:flex; gap:10px; align-items:center; }
+#room-input {
+  background:rgba(0,0,0,0.5); border:2px solid rgba(0,245,255,0.35);
+  border-radius:6px; color:#fff; font-family:'Orbitron',sans-serif;
+  font-size:1.5rem; letter-spacing:8px; text-align:center;
+  padding:10px 16px; width:180px; text-transform:uppercase; outline:none;
+  transition:.2s;
+}
+#room-input:focus { border-color:#00f5ff; box-shadow:0 0 18px rgba(0,245,255,0.3); }
+#online-status {
+  font-size:0.7rem; letter-spacing:3px; min-height:1.4em; color:#80c0ff;
+}
+#lobby-panel {
+  display:flex; flex-direction:column; align-items:center; gap:10px;
+  width:min(900px,94vw);
+  padding:12px;
+  background:rgba(0,0,0,0.28);
+  border:1px solid rgba(0,245,255,0.22);
+  border-radius:8px;
+}
+#lobby-body {
+  display:grid; grid-template-columns:minmax(320px,1fr) 270px; gap:10px;
+  width:100%; min-height:180px;
+}
+.lobby-col { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.lobby-col-title { color:#7fb0ff; font-size:.58rem; letter-spacing:2px; opacity:.8; text-align:left; }
+#lobby-players,#lobby-chat {
+  background:rgba(0,0,0,0.32);
+  border:1px solid rgba(255,255,255,0.1);
+  border-radius:6px;
+  padding:8px;
+  overflow:auto;
+  max-height:210px;
+}
+#lobby-chat { min-height:210px; }
+#lobby-players { min-height:210px; }
+@media (max-width:760px){
+  #lobby-body { grid-template-columns:1fr; }
+}
+.lobby-player {
+  display:grid; grid-template-columns:1fr auto; gap:6px; align-items:center;
+  padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06);
+  font-size:.64rem; letter-spacing:1px;
+}
+.lobby-player-name { color:#cfe6ff; }
+.lobby-ping { color:#7fe0a0; font-size:.58rem; opacity:.9; }
+.lobby-chat-line { font-size:.66rem; line-height:1.5; color:#cfe6ff; margin-bottom:5px; letter-spacing:.6px; }
+.lobby-system { color:#80c0ff; opacity:.85; }
+.challenge-btn { padding:5px 8px; font-size:.55rem; letter-spacing:1px; }
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.pulsing { animation:pulse 1s infinite; }
+#ping-info {
+  position:absolute; top:6px; right:10px;
+  font-size:0.6rem; letter-spacing:1px; color:rgba(0,245,255,0.4);
+  font-family:'Orbitron',monospace;
+}
+/* Tournament */
+#tournament-setup,#bracket-screen {
+  display:flex; flex-direction:column; align-items:center; gap:16px;
+  position:relative; z-index:1;
+}
+#tp-names {
+  width:280px; height:180px; resize:vertical;
+  background:rgba(0,0,0,0.4); color:#cfe6ff; border:1px solid rgba(0,245,255,0.3);
+  border-radius:8px; padding:10px 12px; font-family:'Orbitron',monospace;
+  font-size:0.72rem; letter-spacing:1px; line-height:1.7;
+}
+.tp-size-btn.active { border-color:#00f5ff; box-shadow:0 0 20px rgba(0,245,255,0.5); background:linear-gradient(135deg,rgba(0,100,200,0.5),rgba(100,0,200,0.5)); }
+#bracket-cols {
+  display:flex; gap:22px; align-items:center; justify-content:center;
+  overflow-x:auto; max-width:94vw; padding:8px 4px;
+}
+.tp-col { display:flex; flex-direction:column; gap:14px; justify-content:space-around; min-width:118px; }
+.tp-round-label { font-size:0.58rem; letter-spacing:2px; color:#6a8fb0; text-align:center; margin-bottom:2px; }
+.tp-match { display:flex; flex-direction:column; gap:3px; }
+.tp-slot {
+  padding:6px 9px; border-radius:5px; font-size:0.66rem; letter-spacing:0.5px;
+  background:rgba(20,26,44,0.85); border:1px solid rgba(120,140,190,0.22);
+  color:#9fb2cc; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.tp-slot.tp-win  { color:#eafff2; border-color:rgba(62,240,122,0.6); box-shadow:inset 0 0 10px rgba(62,240,122,0.14); }
+.tp-slot.tp-lose { color:#5a6478; text-decoration:line-through; opacity:0.65; }
+.tp-slot.tp-you  { font-weight:900; color:#ffd23e; }
+.tp-slot.tp-you.tp-win { color:#ffe98a; }
+#tp-champion { font-size:1.3rem; color:#ffd23e; text-shadow:0 0 16px rgba(255,210,62,0.6); text-align:center; }
+#tp-banner { font-size:0.8rem; color:#a0f0ff; min-height:1em; text-align:center; }
+/* Register + Hall of Fame + Settings */
+#register-screen,#settings-screen { display:flex; flex-direction:column; align-items:center; gap:16px; position:relative; z-index:1; }
+.onepass-fields { display:grid; gap:10px; width:280px; }
+.onepass-fields input { text-align:center; background:rgba(0,0,0,.4); color:#cfe6ff; border:1px solid rgba(0,245,255,.3); border-radius:8px; padding:10px 12px; font-family:'Orbitron',sans-serif; }
+.settings-row { display:flex; align-items:center; justify-content:space-between; gap:24px; width:min(360px,88vw); color:#cfe6ff; font-size:.8rem; letter-spacing:1px; }
+.settings-row input { width:20px; height:20px; accent-color:#ffd23e; }
+.hof-table { width:100%; border-collapse:collapse; font-size:0.72rem; }
+.hof-table th { color:#6a8fb0; font-weight:400; letter-spacing:2px; font-size:0.58rem; padding:4px 8px; text-align:right; }
+.hof-table th.l,.hof-table td.l { text-align:left; }
+.hof-table td { padding:6px 8px; text-align:right; border-top:1px solid rgba(120,140,190,0.14); color:#c0d4ea; }
+.hof-table tr.me td { color:#ffd23e; font-weight:900; }
+.hof-rank { color:#6a8fb0; }
+.hof-top1 .hof-rank { color:#ffd23e; }
+.hof-empty { color:#6a8fb0; font-size:0.75rem; }
+</style>
+</head>
+<body>
+<canvas id="stars-bg"></canvas>
+
+<!-- MAIN MENU -->
+<div id="menu">
+  <div class="menu-shell">
+    <div class="menu-actions">
+      <h1>SLIME SOCCER</h1>
+      <div class="subtitle">NEON EDITION</div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" onclick="chooseMode('single')">Single Player</button>
+        <button class="btn" onclick="chooseMode('multi')">Local 2P</button>
+        <button class="btn" onclick="showOnlineMenu()">&#127760; Online</button>
+        <button class="btn" onclick="showQuadMenu()">4-Player</button>
+        <button class="btn" onclick="showTournamentSetup()">&#127942; Tournament</button>
+      </div>
+      <div class="row" style="margin-top:2px">
+        <button class="btn btn-sm" onclick="showSettings()">Settings</button>
+      </div>
+    </div>
+    <aside class="menu-hof">
+      <h2>HALL OF FAME</h2>
+      <div id="hof-body"></div>
+    </aside>
+  </div>
+  <div id="lobby-panel">
+    <div class="subtitle">CHAT ROOM - CHALLENGE PLAYERS</div>
+    <div id="lobby-body">
+      <div class="lobby-col">
+        <div class="lobby-col-title">CHAT</div>
+        <div id="lobby-chat"></div>
+      </div>
+      <div class="lobby-col">
+        <div class="lobby-col-title">ONLINE USERS</div>
+        <div id="lobby-players"></div>
+      </div>
+    </div>
+    <div class="input-row" style="width:min(720px,90vw)">
+      <input id="lobby-input" maxlength="180" placeholder="chat message" style="flex:1;letter-spacing:1px;font-size:.8rem;text-align:left">
+      <button class="btn btn-sm" onclick="sendLobbyChat()">Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div id="settings-screen" class="hidden">
+  <h2>SETTINGS</h2>
+  <label class="settings-row">
+    <span>Airplane ads</span>
+    <input id="setting-airplanes" type="checkbox" onchange="setAirplaneAds(this.checked)">
+  </label>
+  <button class="btn btn-sm" onclick="backToMenu()">&#8592; Back</button>
+</div>
+
+<!-- 4-PLAYER MENU -->
+<div id="quad-menu" class="hidden">
+  <h2>4-PLAYER (2v2)</h2>
+  <div class="subtitle">WIDER FIELD &middot; ATTACKER + GOALKEEPER PER TEAM</div>
+  <div class="row" style="margin-top:8px">
+    <button class="btn" onclick="chooseModeQuad('quadSolo')">Solo vs Bots</button>
+    <button class="btn" onclick="chooseModeQuad('quadLocal')">Local 2P + Bot Keepers</button>
+    <button class="btn" onclick="showQuadOnlineMenu()">&#127760; Online 2v2</button>
+  </div>
+  <button class="btn btn-sm" onclick="backToMenu()">&#8592; Back</button>
+</div>
+
+<!-- 4-PLAYER ONLINE MENU -->
+<div id="quad-online-menu" class="hidden">
+  <h2>ONLINE 2v2</h2>
+  <div class="row" style="align-items:flex-start; gap:32px">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+      <button class="btn" onclick="hostGameQuad()">Host Game</button>
+      <div id="quad-room-panel" class="hidden">
+        <div class="subtitle">YOUR ROOM CODE</div>
+        <span id="quad-room-code">----</span>
+        <button class="btn btn-sm" id="quad-copy-code-btn" onclick="copyRoomCodeQuad()">Copy Code</button>
+        <div style="font-size:.65rem;opacity:.5;letter-spacing:2px">SHARE WITH 3 FRIENDS</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+      <div class="input-row">
+        <input id="room-input-quad" maxlength="12" placeholder="ROOM ID" style="letter-spacing:4px">
+        <button class="btn" onclick="joinGameQuad()">Join</button>
+      </div>
+    </div>
+  </div>
+  <div id="quad-online-status" class="pulsing">READY</div>
+  <button class="btn btn-sm" onclick="cancelOnlineQuad()">&#8592; Back</button>
+</div>
+
+<!-- ONLINE MENU -->
+<div id="online-menu" class="hidden">
+  <h2>ONLINE MULTIPLAYER</h2>
+  <div class="row" style="align-items:flex-start; gap:32px">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+      <button class="btn" onclick="hostGame()">Host Game</button>
+      <div id="room-panel" class="hidden">
+        <div class="subtitle">YOUR ROOM CODE</div>
+        <span id="room-code">----</span>
+        <button class="btn btn-sm" id="copy-code-btn" onclick="copyRoomCode()">Copy Code</button>
+        <div style="font-size:.65rem;opacity:.5;letter-spacing:2px">SHARE WITH FRIEND</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+      <div class="input-row">
+        <input id="room-input" maxlength="12" placeholder="ROOM ID" style="letter-spacing:4px">
+        <button class="btn" onclick="joinGame()">Join</button>
+      </div>
+    </div>
+  </div>
+  <div id="online-status" class="pulsing">READY</div>
+  <button class="btn btn-sm" onclick="cancelOnline()">&#8592; Back</button>
+</div>
+
+<!-- DURATION MENU -->
+<div id="duration-menu" class="hidden">
+  <h2>SELECT DURATION</h2>
+  <div style="font-size:.75rem;letter-spacing:3px">
+    <span class="cyan">&#9679; CYAN</span> &nbsp;vs&nbsp; <span class="red">&#9679; RED</span>
+  </div>
+  <div class="row">
+    <button class="btn" onclick="startGame(60)">1 MIN</button>
+    <button class="btn" onclick="startGame(120)">2 MIN</button>
+    <button class="btn" onclick="startGame(240)">4 MIN</button>
+    <button class="btn" onclick="startGame(480)">8 MIN</button>
+    <button class="btn" onclick="startGame(300)">WORLD CUP</button>
+  </div>
+  <div class="controls" id="control-hint"></div>
+  <button class="btn btn-sm" onclick="backToMenu()">&#8592; Back</button>
+</div>
+
+<!-- GAME -->
+<div id="game-area" class="hidden">
+  <div id="game-main">
+    <div id="hud">
+      <div class="score-block">
+        <div class="score-label cyan">CYAN</div>
+        <div class="score-val cyan" id="score-left">0</div>
+      </div>
+      <span id="timer">00:00</span>
+      <div class="score-block">
+        <div class="score-label red">RED</div>
+        <div class="score-val red" id="score-right">0</div>
+      </div>
+    </div>
+    <div style="position:relative">
+      <canvas id="canvas" width="1000" height="520"></canvas>
+      <button id="pause-btn" onclick="togglePause()">Pause</button>
+      <div id="pause-overlay">PAUSED</div>
+      <div id="ping-info"></div>
+    </div>
+  </div>
+
+  <div id="controls-panel">
+    <div class="ctrl-section" id="ctrl-left" style="display:none">
+      <div class="ctrl-title cyan">CYAN</div>
+      <div class="ctrl-row"><span class="key">W</span> Jump</div>
+      <div class="ctrl-row"><span class="key">A</span><span class="key">D</span> Move</div>
+      <div class="ctrl-row"><span class="key">S</span> Boost</div>
+      <div class="ctrl-row"><span class="key" id="ctrl-left-boostkey">SPACE</span> Roll (air)</div>
+    </div>
+    <div class="ctrl-section" id="ctrl-right" style="display:none">
+      <div class="ctrl-title red">RED</div>
+      <div class="ctrl-row"><span class="key">↑</span> Jump</div>
+      <div class="ctrl-row"><span class="key">←</span><span class="key">→</span> Move</div>
+      <div class="ctrl-row"><span class="key">↓</span> Boost</div>
+      <div class="ctrl-row"><span class="key" id="ctrl-right-boostkey">SPACE</span> Roll (air)</div>
+    </div>
+    <div class="ctrl-section" id="ctrl-ai" style="display:none">
+      <div class="ctrl-title" style="color:#8090b0">AI</div>
+      <div id="ctrl-ai-text" style="font-size:0.58rem;color:#506070;line-height:1.6">Cyan is<br>controlled<br>by AI</div>
+    </div>
+    <button class="btn btn-sm" style="margin-top:auto;font-size:0.6rem;padding:6px 10px" onclick="backToMenu()">&#8592; Menu</button>
+  </div>
+</div>
+
+<!-- END SCREEN -->
+<div id="end-screen" class="hidden">
+  <h2 id="winner-text" style="font-size:2rem"></h2>
+  <div class="row" style="margin-top:4px; gap:24px; align-items:center">
+    <span class="cyan" id="fs-l" style="font-size:3.5rem;font-weight:900">0</span>
+    <span style="font-size:2rem;opacity:.3">—</span>
+    <span class="red" id="fs-r" style="font-size:3.5rem;font-weight:900">0</span>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button class="btn" onclick="backToMenu()">Main Menu</button>
+    <button class="btn" id="rematch-btn" onclick="rematch()">Rematch</button>
+  </div>
+</div>
+
+<!-- TOURNAMENT SETUP -->
+<div id="tournament-setup" class="hidden">
+  <h2>&#127942; TOURNAMENT</h2>
+  <div class="subtitle">SINGLE ELIMINATION &middot; LAST SLIME STANDING</div>
+  <div class="row">
+    <button class="btn tp-size-btn" data-size="4"  onclick="setTournamentSize(4)">4</button>
+    <button class="btn tp-size-btn" data-size="8"  onclick="setTournamentSize(8)">8</button>
+    <button class="btn tp-size-btn" data-size="16" onclick="setTournamentSize(16)">16</button>
+  </div>
+  <div class="subtitle" style="letter-spacing:2px">ENTRANTS &mdash; ONE PER LINE, YOU ARE THE FIRST</div>
+  <textarea id="tp-names" spellcheck="false"></textarea>
+  <div class="row">
+    <button class="btn btn-sm" onclick="backToMenu()">&#8592; Back</button>
+    <button class="btn" onclick="startTournament()">Start Cup</button>
+  </div>
+</div>
+
+<!-- BRACKET -->
+<div id="bracket-screen" class="hidden">
+  <h2>&#127942; THE CUP</h2>
+  <div id="tp-champion" class="hidden"></div>
+  <div id="tp-banner"></div>
+  <div id="bracket-cols"></div>
+  <div class="row" style="margin-top:6px">
+    <button class="btn btn-sm" onclick="quitTournament()">&#8592; Quit</button>
+    <button class="btn" id="tp-action" onclick="advanceTournament()">Play Next Match</button>
+  </div>
+</div>
+
+<!-- LOONY SIGN IN -->
+<div id="register-screen" class="hidden">
+  <h2>&#128100; LOONY USER</h2>
+  <div class="subtitle">REGISTER ON LOONY &middot; PLAY HERE</div>
+  <div class="onepass-fields" id="onepass-fields">
+    <input id="reg-email" type="email" autocomplete="email" placeholder="Email address">
+    <input id="reg-password" type="password" autocomplete="current-password" placeholder="Password">
+  </div>
+  <div id="reg-msg" style="font-size:0.7rem;min-height:1em;color:#ff9a5a"></div>
+  <div id="reg-record" style="font-size:0.7rem;color:#7fe0a0"></div>
+  <div class="row">
+    <button class="btn btn-sm" onclick="backToMenu()">&#8592; Back</button>
+    <button class="btn" id="onepass-email-btn" onclick="signInOnePassEmail()">Sign in</button>
+    <button class="btn" id="onepass-google-btn" onclick="signInOnePassGoogle()">Google</button>
+    <button class="btn btn-sm" id="loony-register-btn" onclick="openLoonyRegister()">Register on Loony</button>
+    <button class="btn btn-sm hidden" id="onepass-out-btn" onclick="signOutOnePass()">Sign out</button>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
+const onePassApp=initializeApp({apiKey:'AIzaSyCZlRFRVjPRsPH5Q1oxaTpsSC1yXzKLI7M',authDomain:'generaluserstation.firebaseapp.com',projectId:'generaluserstation',storageBucket:'generaluserstation.firebasestorage.app',messagingSenderId:'246599734468',appId:'1:246599734468:web:662fba4542fae194972591'});
+const onePassAuth=getAuth(onePassApp);
+window.onePass={currentUser:()=>onePassAuth.currentUser,email:(e,p)=>signInWithEmailAndPassword(onePassAuth,e,p),google:()=>signInWithPopup(onePassAuth,new GoogleAuthProvider()),out:()=>signOut(onePassAuth)};
+onAuthStateChanged(onePassAuth,user=>window.dispatchEvent(new CustomEvent('onepass-auth',{detail:user})));
+</script>
+<script>
+// ── Starfield ───────────────────────────────────────────────────────────────
+(function(){
+  const sc=document.getElementById('stars-bg');
+  function resize(){ sc.width=window.innerWidth; sc.height=window.innerHeight; }
+  resize(); window.addEventListener('resize',resize);
+  const sx=sc.getContext('2d');
+  const stars=Array.from({length:220},()=>({
+    x:Math.random()*3000, y:Math.random()*2000,
+    r:Math.random()*1.4+0.2, t:Math.random()*Math.PI*2, spd:Math.random()*0.006+0.003
+  }));
+  function drawStars(){
+    sc.width=sc.width; // clear
+    stars.forEach(s=>{
+      s.t+=s.spd;
+      const a=0.3+0.5*Math.sin(s.t);
+      sx.fillStyle=`rgba(255,255,255,${a})`;
+      sx.beginPath();
+      sx.arc((s.x%sc.width),(s.y%sc.height),s.r,0,Math.PI*2);
+      sx.fill();
+    });
+    requestAnimationFrame(drawStars);
+  }
+  drawStars();
+})();
+
+// ── Constants ───────────────────────────────────────────────────────────────
+const W_DUO=1000,W_QUAD=1400;
+let W=W_DUO; // field width — mutable; widened for 4-player (2v2) games
+const H=520,GH=80,SR=40,BR=12,GW=80,GHEIGHT=130;
+const GRAV=0.6,SPEED=6,BOOST_SPEED=11,JUMP=-13,BDAMP=0.99,BBOUNCE=0.8,MAXSPEED=14;
+// Roll: a mid-air move, usable off a short cooldown ONLY while airborne. It
+// doesn't dash the player — but while it's active, any ball the slime touches
+// (loose or knocked off an opponent) rockets away hard, ignoring the normal
+// MAXSPEED clamp. rollTimer counts down the active window.
+const ROLL_COOLDOWN_TICKS=90, ROLL_TICKS=22, ROLL_HIT_SPEED=18;
+// ── Game state ───────────────────────────────────────────────────────────────
+let playerMode=null, timeLeft=0, score={left:0,right:0};
+function isQuadMode(){ return playerMode==='quadSolo'||playerMode==='quadLocal'||playerMode==='quadOnline'; }
+function currentRoster(){ return isQuadMode() ? [gs.LA,gs.LK,gs.RA,gs.RK] : [gs.L,gs.R]; }
+let gameRunning=false, gamePaused=false, animId=null, timerId=null, lastFrame=0, lastDuration=60;
+let audioCtx=null;
+// Online (native WebSocket) — auto-detects local vs deployed host
+const WS_URL=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws';
+let gameWs=null, mySide=null, mySeat=null;
+let onlineRollKeyDown=false, onlineRollCooldownUI=0; // UI-only; server is authoritative
+// Same host/port as the WS, over http(s) — for the records/hall-of-fame REST API.
+const API_BASE = WS_URL.replace(/^ws(s?):\/\//,'http$1://').replace(/\/ws$/,'');
+function loadName(){ try{ return localStorage.getItem('cf_playerName')||null; }catch(e){ return null; } }
+function storeName(n){ try{ localStorage.setItem('cf_playerName',n); }catch(e){} }
+let playerName = loadName(); // registered nickname, or null
+function loadAirplaneAds(){ try{ return localStorage.getItem('cf_airplaneAds')!=='0'; }catch(e){ return true; } }
+let airplaneAdsEnabled=loadAirplaneAds();
+let onePassToken=null;
+let loonyHandoffToken=null;
+window.addEventListener('onepass-auth',async e=>{
+  const user=e.detail;
+  if(!user){
+    if(loonyHandoffToken) return;
+    if(gameWs&&gameWs.readyState===1){try{gameWs.send(JSON.stringify({type:'lobbyLeave'}));}catch(e){}}
+    onePassToken=null; playerName=null; storeName(''); updateNameLabel(); updateOnePassScreen(null); return;
+  }
+  try{ onePassToken=await user.getIdToken(); await registerOnePassToken(onePassToken); }
+  catch(error){ showOnePassError(error.message); }
+});
+
+const gs={
+  L:{team:'left', x:250,y:H-GH,vx:0,vy:0,grab:false,hasBall:false,glTime:0,targetX:250,cooldown:0,stable:true,lastBY:0,stuck:0,rollCooldown:0,rollTimer:0,rollDir:0,_rollKeyDown:false},
+  R:{team:'right',x:750,y:H-GH,vx:0,vy:0,grab:false,hasBall:false,glTime:0,rollCooldown:0,rollTimer:0,rollDir:0,_rollKeyDown:false},
+  // Quad (2v2) roster: Attacker + Keeper per team, on a wider field
+  LA:{id:'LA',team:'left', role:'attacker',x:0,y:H-GH,vx:0,vy:0,grab:false,hasBall:false,glTime:0,targetX:0,cooldown:0,stuck:0,lastBY:0,rollCooldown:0,rollTimer:0,rollDir:0,_rollKeyDown:false},
+  LK:{id:'LK',team:'left', role:'keeper',  x:0,y:H-GH,vx:0,vy:0,grab:false,hasBall:false,glTime:0,rollCooldown:0,rollTimer:0,rollDir:0,_rollKeyDown:false},
+  RA:{id:'RA',team:'right',role:'attacker',x:0,y:H-GH,vx:0,vy:0,grab:false,hasBall:false,glTime:0,targetX:0,cooldown:0,stuck:0,lastBY:0,rollCooldown:0,rollTimer:0,rollDir:0,_rollKeyDown:false},
+  RK:{id:'RK',team:'right',role:'keeper',  x:0,y:H-GH,vx:0,vy:0,grab:false,hasBall:false,glTime:0,rollCooldown:0,rollTimer:0,rollDir:0,_rollKeyDown:false},
+  ball:{x:W/2,y:150,vx:0,vy:0,owner:null,angle:0,angVel:0}
+};
+const keys={};
+let particles=[];
+const ballTrail=[];
+
+// ── Audio ────────────────────────────────────────────────────────────────────
+function getAC(){ if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)(); return audioCtx; }
+function osc(type,freq,gain,dur,fe){
+  try{
+    const ac=getAC(),o=ac.createOscillator(),g=ac.createGain();
+    o.type=type; o.frequency.setValueAtTime(freq,ac.currentTime);
+    if(fe!==undefined) o.frequency.exponentialRampToValueAtTime(fe,ac.currentTime+dur);
+    g.gain.setValueAtTime(gain,ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+dur);
+    o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime+dur);
+  }catch(e){}
+}
+function noise(gain,dur){
+  try{
+    const ac=getAC(),buf=ac.createBuffer(1,ac.sampleRate*dur,ac.sampleRate);
+    const d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+    const src=ac.createBufferSource(),g=ac.createGain(),f=ac.createBiquadFilter();
+    f.type='bandpass'; f.frequency.value=800; src.buffer=buf;
+    g.gain.setValueAtTime(gain,ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+dur);
+    src.connect(f); f.connect(g); g.connect(ac.destination); src.start(); src.stop(ac.currentTime+dur);
+  }catch(e){}
+}
+const snd={
+  bounce:(s)=>{ s=Math.min(s/10,1); if(s<0.1)return; osc('sine',200+s*200,0.15*s,0.08); },
+  hit:(s)=>{ s=Math.min(s/12,1); osc('square',150+s*300,0.2,0.12,80); noise(0.08*s,0.1); },
+  grab:()=>osc('sine',600,0.1,0.06,900),
+  // Whoosh for a roll — a fast upward sweep plus a burst of filtered noise so
+  // it reads as a spinning tumble.
+  roll:()=>{ osc('sawtooth',180,0.22,0.28,720); osc('square',360,0.12,0.22,1000); noise(0.18,0.2); },
+  release:(av)=>{ const s=Math.min(Math.abs(av)*8,1); osc('sawtooth',300+s*400,0.15,0.1,100); },
+  wall:()=>osc('triangle',300,0.1,0.06),
+  goal:()=>{
+    try{
+      const ac=getAC();
+      [0,0.1,0.2,0.35].forEach((t,i)=>{
+        const o=ac.createOscillator(),g=ac.createGain();
+        o.type='square'; o.frequency.value=[523,659,784,1047][i];
+        g.gain.setValueAtTime(0.18,ac.currentTime+t);
+        g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+t+0.18);
+        o.connect(g); g.connect(ac.destination);
+        o.start(ac.currentTime+t); o.stop(ac.currentTime+t+0.22);
+      });
+    }catch(e){}
+  },
+  // Triumphant rising fanfare for a win / cup victory.
+  win:()=>{
+    try{
+      const ac=getAC();
+      // C-E-G-C-E-G major run, brighter with each note, ending on a held chord.
+      const notes=[[0,523],[0.12,659],[0.24,784],[0.36,1047],[0.5,1319],[0.64,1568]];
+      notes.forEach(([t,f])=>{
+        const o=ac.createOscillator(),g=ac.createGain();
+        o.type='square'; o.frequency.value=f;
+        g.gain.setValueAtTime(0.2,ac.currentTime+t);
+        g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+t+0.3);
+        o.connect(g); g.connect(ac.destination);
+        o.start(ac.currentTime+t); o.stop(ac.currentTime+t+0.34);
+      });
+      // Sparkle on top of the final note.
+      [1760,2093].forEach(f=>{
+        const o=ac.createOscillator(),g=ac.createGain();
+        o.type='triangle'; o.frequency.value=f;
+        g.gain.setValueAtTime(0.12,ac.currentTime+0.64);
+        g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+1.1);
+        o.connect(g); g.connect(ac.destination);
+        o.start(ac.currentTime+0.64); o.stop(ac.currentTime+1.15);
+      });
+    }catch(e){}
+  },
+  // Deflating descending "womp" for a loss.
+  lose:()=>{
+    try{
+      const ac=getAC();
+      [[0,392],[0.18,330],[0.36,262],[0.56,196]].forEach(([t,f])=>{
+        const o=ac.createOscillator(),g=ac.createGain();
+        o.type='sawtooth'; o.frequency.setValueAtTime(f,ac.currentTime+t);
+        o.frequency.exponentialRampToValueAtTime(f*0.94,ac.currentTime+t+0.22);
+        g.gain.setValueAtTime(0.16,ac.currentTime+t);
+        g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+t+0.26);
+        o.connect(g); g.connect(ac.destination);
+        o.start(ac.currentTime+t); o.stop(ac.currentTime+t+0.3);
+      });
+    }catch(e){}
+  }
+};
+
+// ── Input ────────────────────────────────────────────────────────────────────
+function isTypingTarget(e){ const t=e.target.tagName; return t==='INPUT'||t==='TEXTAREA'; }
+document.addEventListener('keydown',e=>{
+  if(isTypingTarget(e))return;
+  const key=e.key.toLowerCase();
+  if((key==='p'||key==='escape')&&canPauseOfflineBot()){ e.preventDefault(); togglePause(); return; }
+  e.preventDefault(); keys[key]=true; getAC();
+});
+document.addEventListener('keyup',e=>{ if(isTypingTarget(e))return; e.preventDefault(); keys[e.key.toLowerCase()]=false; });
+document.getElementById('room-input').addEventListener('keydown',e=>{ if(e.key==='Enter') joinGame(); });
+document.getElementById('lobby-input').addEventListener('keydown',e=>{ if(e.key==='Enter') sendLobbyChat(); });
+
+// ── Online (native WebSocket) ─────────────────────────────────────────────────
+function setStatus(txt,pulse=false){
+  const el=document.getElementById('online-status');
+  el.textContent=txt; el.className=pulse?'pulsing':'';
+}
+let lobbyId=null;
+let lobbyPlayers=[];
+let loonyOnlinePlayers=[];
+function lobbyEsc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function addLobbyLine(from,text,system=false){
+  const box=document.getElementById('lobby-chat');
+  if(!box)return;
+  const line=document.createElement('div');
+  line.className='lobby-chat-line'+(system?' lobby-system':'');
+  line.innerHTML='<b>'+lobbyEsc(from)+':</b> '+lobbyEsc(text);
+  box.appendChild(line);
+  box.scrollTop=box.scrollHeight;
+}
+function renderLobbyPlayers(players){
+  const box=document.getElementById('lobby-players');
+  if(!box)return;
+  if(players) lobbyPlayers=players;
+  const seen=new Set();
+  const merged=[...lobbyPlayers,...loonyOnlinePlayers.map(p=>({id:p.id,name:p.name,registered:true,external:true,busy:false,ping:null,online:p.online,inChat:p.inChat,source:p.source}))].filter(p=>{
+    const key=String(p.name||'').toLowerCase();
+    if(!key||seen.has(key))return false;
+    seen.add(key);
+    return true;
+  });
+  players=merged;
+  if(!players||!players.length){box.innerHTML='<div class="lobby-chat-line lobby-system">No players yet</div>';return;}
+  box.innerHTML=players.map(p=>{
+    const me=p.id===lobbyId;
+    const ping=p.external?'Loony online':(p.ping==null?'--':p.ping+'ms');
+    const badge=p.registered?' <span class="lobby-ping">LOONY</span>':'';
+    const label=lobbyEsc(p.name)+badge+(me?' (you)':'')+(p.busy?' - playing':'');
+    const btn=(!p.external&&!me&&!p.busy)?`<button class="btn btn-sm challenge-btn" onclick="challengeLobbyPlayer(${p.id})">Challenge</button>`:'';
+    return `<div class="lobby-player"><div><div class="lobby-player-name">${label}</div><div class="lobby-ping">${ping}</div></div>${btn}</div>`;
+  }).join('');
+}
+function refreshLoonyOnline(){
+  fetch(API_BASE+'/api/loony-online')
+    .then(r=>r.json())
+    .then(d=>{loonyOnlinePlayers=d.players||[];renderLobbyPlayers();})
+    .catch(()=>{});
+}
+function connectLobby(){
+  refreshLoonyOnline();
+  if(gameWs&&gameWs.readyState===1&&!gameRunning){
+    gameWs.send(JSON.stringify({type:'lobbyJoin',name:playerName||'Guest',idToken:onePassToken||undefined}));
+    return;
+  }
+  setStatus('CONNECTING TO CHAT...', true);
+  _openWs(()=>gameWs.send(JSON.stringify({type:'lobbyJoin',name:playerName||'Guest',idToken:onePassToken||undefined})));
+}
+function sendLobbyChat(){
+  const input=document.getElementById('lobby-input');
+  const text=input.value.trim();
+  if(!text||!gameWs||gameWs.readyState!==1)return;
+  gameWs.send(JSON.stringify({type:'lobbyChat',text,name:playerName||'Guest'}));
+  input.value='';
+}
+function challengeLobbyPlayer(id){
+  if(gameWs&&gameWs.readyState===1)gameWs.send(JSON.stringify({type:'challenge',to:id,name:playerName||'Guest'}));
+}
+let currentRoomId='', lastPingMs=null;
+function updatePingInfo(){
+  const el=document.getElementById('ping-info');
+  if(!currentRoomId){el.textContent='';return;}
+  el.textContent='ROOM: '+currentRoomId+(lastPingMs!=null?' · PING '+Math.round(lastPingMs)+'MS':'');
+  el.style.color=lastPingMs==null?'':lastPingMs<80?'rgba(0,245,120,0.55)':lastPingMs<150?'rgba(255,210,0,0.6)':'rgba(255,90,90,0.7)';
+}
+function sendPing(){ if(gameWs&&gameWs.readyState===1)gameWs.send(JSON.stringify({type:'ping',t:performance.now()})); }
+setInterval(sendPing,2000);
+function showOnlineMenu(){
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('online-menu').classList.remove('hidden');
+  setStatus('READY');
+  connectLobby();
+}
+function resetCopyBtn(){
+  const btn=document.getElementById('copy-code-btn');
+  if(btn) btn.textContent='Copy Code';
+}
+function copyRoomCode(){
+  const code=document.getElementById('room-code').textContent;
+  const btn=document.getElementById('copy-code-btn');
+  const flash=(ok)=>{ btn.textContent=ok?'Copied!':'Copy Failed'; setTimeout(resetCopyBtn,1500); };
+  if(navigator.clipboard&&window.isSecureContext){
+    navigator.clipboard.writeText(code).then(()=>flash(true),()=>flash(false));
+  } else {
+    // fallback for non-HTTPS/older browsers
+    const ta=document.createElement('textarea');
+    ta.value=code; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    let ok=false; try{ok=document.execCommand('copy');}catch(e){}
+    document.body.removeChild(ta);
+    flash(ok);
+  }
+}
+function cancelOnline(){
+  if(gameWs&&gameWs.readyState===1){try{gameWs.send(JSON.stringify({type:'lobbyLeave'}));}catch(e){}}
+  if(gameWs){gameWs.onclose=null;gameWs.close();gameWs=null;} mySide=null;
+  document.getElementById('online-menu').classList.add('hidden');
+  document.getElementById('room-panel').classList.add('hidden');
+  document.getElementById('menu').classList.remove('hidden');
+  setStatus('READY'); resetCopyBtn();
+}
+
+// ── 4-Player (2v2) online ─────────────────────────────────────────────────────
+const SEAT_LABELS={LA:'CYAN ATTACKER',LK:'CYAN GOALKEEPER',RA:'RED ATTACKER',RK:'RED GOALKEEPER'};
+function setStatusQuad(txt,pulse=false){
+  const el=document.getElementById('quad-online-status');
+  el.textContent=txt; el.className=pulse?'pulsing':'';
+}
+function showQuadOnlineMenu(){
+  document.getElementById('quad-menu').classList.add('hidden');
+  document.getElementById('quad-online-menu').classList.remove('hidden');
+  setStatusQuad('READY');
+}
+function resetCopyBtnQuad(){
+  const btn=document.getElementById('quad-copy-code-btn');
+  if(btn) btn.textContent='Copy Code';
+}
+function copyRoomCodeQuad(){
+  const code=document.getElementById('quad-room-code').textContent;
+  const btn=document.getElementById('quad-copy-code-btn');
+  const flash=(ok)=>{ btn.textContent=ok?'Copied!':'Copy Failed'; setTimeout(resetCopyBtnQuad,1500); };
+  if(navigator.clipboard&&window.isSecureContext){
+    navigator.clipboard.writeText(code).then(()=>flash(true),()=>flash(false));
+  } else {
+    const ta=document.createElement('textarea');
+    ta.value=code; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    let ok=false; try{ok=document.execCommand('copy');}catch(e){}
+    document.body.removeChild(ta);
+    flash(ok);
+  }
+}
+function cancelOnlineQuad(){
+  if(gameWs){gameWs.onclose=null;gameWs.close();gameWs=null;} mySeat=null;
+  document.getElementById('quad-online-menu').classList.add('hidden');
+  document.getElementById('quad-room-panel').classList.add('hidden');
+  document.getElementById('menu').classList.remove('hidden');
+  setStatusQuad('READY'); resetCopyBtnQuad();
+}
+function hostGameQuad(){
+  mySide=null;
+  setStatusQuad('CONNECTING TO SERVER...', true);
+  _openWs(()=>gameWs.send(JSON.stringify({type:'create',mode:'quad'})));
+}
+function joinGameQuad(){
+  mySide=null;
+  const code=document.getElementById('room-input-quad').value.trim().toUpperCase();
+  if(!code){setStatusQuad('ENTER ROOM CODE');return;}
+  setStatusQuad('JOINING...', true);
+  _openWs(()=>gameWs.send(JSON.stringify({type:'join',roomId:code})));
+}
+document.getElementById('room-input-quad').addEventListener('keydown',e=>{ if(e.key==='Enter') joinGameQuad(); });
+
+function _handleWsMsg(e){
+  let msg; try{msg=JSON.parse(e.data);}catch{return;}
+  switch(msg.type){
+    case 'lobbyJoined':
+      lobbyId=msg.id; renderLobbyPlayers(msg.players||[]); setStatus('CHAT ROOM READY'); break;
+    case 'lobbyRoster':
+      renderLobbyPlayers(msg.players||[]); break;
+    case 'loonyPresence':
+      loonyOnlinePlayers=msg.players||[]; renderLobbyPlayers(); break;
+    case 'lobbyChat':
+      addLobbyLine(msg.from||'Lobby',msg.text||'',!!msg.system); break;
+    case 'lobbyHistory': {
+      const box=document.getElementById('lobby-chat');
+      if(box) box.innerHTML='';
+      (msg.messages||[]).forEach(m=>addLobbyLine(m.from||'Player',m.text||''));
+      break;
+    }
+    case 'lobbyNotice':
+      addLobbyLine('Lobby',msg.text||'',true); break;
+    case 'challengeSent':
+      addLobbyLine('Lobby','Challenge sent to '+(msg.name||'player'),true); break;
+    case 'challengeReceived': {
+      addLobbyLine('Lobby',(msg.name||'A player')+' challenged you',true);
+      const ok=confirm((msg.name||'A player')+' challenged you. Accept?');
+      if(gameWs&&gameWs.readyState===1) gameWs.send(JSON.stringify({type:ok?'acceptChallenge':'declineChallenge',id:msg.id}));
+      break;
+    }
+    case 'assigned':
+      if(msg.mode==='quad'){
+        mySeat=msg.side;
+        currentRoomId=msg.roomId; updatePingInfo(); sendPing();
+        if(msg.side==='LA'){
+          document.getElementById('quad-room-code').textContent=msg.roomId;
+          document.getElementById('quad-room-panel').classList.remove('hidden');
+          resetCopyBtnQuad();
+        }
+        setStatusQuad('YOU ARE '+SEAT_LABELS[msg.side]+' — '+msg.filled+'/'+msg.total+' PLAYERS', true);
+      } else {
+        mySide=msg.side;
+        currentRoomId=msg.roomId; updatePingInfo(); sendPing();
+        if(msg.side==='left'){
+          document.getElementById('room-code').textContent=msg.roomId;
+          document.getElementById('room-panel').classList.remove('hidden');
+          setStatus('WAITING FOR OPPONENT...', true);
+          resetCopyBtn();
+        }
+      }
+      break;
+    case 'seatUpdate':
+      setStatusQuad(msg.filled+'/'+msg.total+' PLAYERS — WAITING FOR MORE...', true); break;
+    case 'chooseDuration':
+      if(mySeat){ document.getElementById('quad-online-menu').classList.add('hidden'); document.getElementById('quad-room-panel').classList.add('hidden'); }
+      else      { document.getElementById('online-menu').classList.add('hidden'); document.getElementById('room-panel').classList.add('hidden'); }
+      playerMode=mySeat?'quadOnline':'online'; showDurationMenu(); break;
+    case 'waitingForHost':
+      (mySeat?setStatusQuad:setStatus)('ALL PLAYERS CONNECTED — WAITING FOR HOST TO START...', true); break;
+    case 'gameStarted':
+      document.getElementById('online-menu').classList.add('hidden');
+      document.getElementById('quad-online-menu').classList.add('hidden');
+      document.getElementById('duration-menu').classList.add('hidden');
+      document.getElementById('end-screen').classList.add('hidden');
+      playerMode=msg.mode==='quad'?'quadOnline':'online';
+      lastDuration=msg.duration; timeLeft=msg.duration;
+      score=msg.score||{left:0,right:0};
+      if(mySeat){ gs[mySeat].forceSnap=true; }
+      else if(mySide){(mySide==='left'?gs.L:gs.R).forceSnap=true;}
+      resetAll(); startGameInternal(); break;
+    case 'state':{
+      if(!gameRunning)return;
+      if(msg.mode==='quad'){
+        ['LA','LK','RA','RK'].forEach(k=>{
+          if(k===mySeat)return;
+          ['x','y','vx','vy','grab','hasBall','rollTimer','rollDir'].forEach(f=>{gs[k][f]=msg[k][f];});
+        });
+        if(mySeat){
+          const o=gs[mySeat],srv=msg[mySeat];
+          o.hasBall=srv.hasBall; o.srvX=srv.x; o.rollTimer=srv.rollTimer; o.rollDir=srv.rollDir;
+          onlineRollCooldownUI=srv.rollCooldown;
+          if(o.forceSnap){o.x=srv.x;o.y=srv.y;o.vx=srv.vx;o.vy=srv.vy;o.forceSnap=false;}
+        }
+        if(gs.ball.owner===mySeat && msg.ball.owner===mySeat){
+          gs.ball.angle=msg.ball.angle; gs.ball.angVel=msg.ball.angVel;
+        } else {
+          Object.assign(gs.ball,msg.ball);
+        }
+      } else {
+        const ownK=mySide==='left'?'L':mySide==='right'?'R':null;
+        ['x','y','vx','vy','grab','hasBall','rollTimer','rollDir'].forEach(k=>{
+          if(ownK!=='L')gs.L[k]=msg.L[k];
+          if(ownK!=='R')gs.R[k]=msg.R[k];
+        });
+        if(ownK){
+          // our own slime is predicted locally; just remember where the server
+          // thinks we are so predictOwnSlime() can ease toward it
+          const o=gs[ownK],srv=msg[ownK];
+          o.hasBall=srv.hasBall;
+          o.srvX=srv.x;
+          o.rollTimer=srv.rollTimer; o.rollDir=srv.rollDir;
+          onlineRollCooldownUI=srv.rollCooldown;
+          if(o.forceSnap){o.x=srv.x;o.y=srv.y;o.vx=srv.vx;o.vy=srv.vy;o.forceSnap=false;}
+        }
+        // While we're carrying the ball, predictOwnSlime() pins it to our own
+        // predicted position every local tick — accepting the server's copy
+        // here too would fight that every update and make the ball vibrate.
+        if(gs.ball.owner===mySide && msg.ball.owner===mySide){
+          gs.ball.angle=msg.ball.angle; gs.ball.angVel=msg.ball.angVel;
+        } else {
+          Object.assign(gs.ball,msg.ball);
+        }
+      }
+      score=msg.score; timeLeft=msg.timeLeft; updateHUD(); break;
+    }
+    case 'pong':
+      lastPingMs=performance.now()-msg.t; updatePingInfo();
+      if(gameWs&&gameWs.readyState===1) gameWs.send(JSON.stringify({type:'lobbyPing',ms:lastPingMs}));
+      break;
+    case 'goal':
+      snd.goal(); score=msg.score; updateHUD();
+      if(mySeat){ gs[mySeat].forceSnap=true; }
+      else if(mySide){(mySide==='left'?gs.L:gs.R).forceSnap=true;}
+      if(msg.scorer==='left') spawnGoal(W-GW/2,H-GH-60,'#00f5ff');
+      else                    spawnGoal(GW/2,  H-GH-60,'#ff3366'); break;
+    case 'hit':  spawnHit(msg.x,msg.y); snd.hit(6); break;
+    case 'grab': snd.grab(); break;
+    case 'gameEnded': score=msg.score; stopGame(); endGame(); break;
+    case 'opponentLeft':
+      stopGame(); (mySeat?setStatusQuad:setStatus)('A PLAYER DISCONNECTED');
+      setTimeout(backToMenu,2000); break;
+    case 'opponentLeftLobby':
+      // Guest dropped before the game started — keep the room open and wait again
+      document.getElementById('duration-menu').classList.add('hidden');
+      document.getElementById('online-menu').classList.remove('hidden');
+      document.getElementById('room-panel').classList.remove('hidden');
+      setStatus('OPPONENT LEFT — WAITING FOR NEW OPPONENT...', true); break;
+    case 'seatLeftLobby':
+      document.getElementById('duration-menu').classList.add('hidden');
+      document.getElementById('quad-online-menu').classList.remove('hidden');
+      document.getElementById('quad-room-panel').classList.remove('hidden');
+      setStatusQuad('A PLAYER LEFT — '+msg.filled+'/'+msg.total+' PLAYERS', true); break;
+    case 'error':
+      (mySeat?setStatusQuad:setStatus)(msg.message||'ERROR');
+      if(gameWs){gameWs.onclose=null;gameWs.close();gameWs=null;} break;
+  }
+}
+
+function _openWs(onopen){
+  // Drop any previous connection first so a retry or double-click
+  // never leaves a ghost socket holding a seat in a room
+  if(gameWs){gameWs.onopen=gameWs.onmessage=gameWs.onerror=gameWs.onclose=null;try{gameWs.close();}catch(e){}gameWs=null;}
+  currentRoomId=''; lastPingMs=null;
+  const ws=new WebSocket(WS_URL);
+  const showWsError=()=> (mySeat?setStatusQuad:setStatus)('SERVER UNREACHABLE - is it running?');
+  ws.onopen=()=>{
+    // Identify first so game results get credited to the registered name.
+    if(onePassToken){ try{ ws.send(JSON.stringify({type:'identify',idToken:onePassToken})); }catch(e){} }
+    onopen();
+  };
+  ws.onmessage=_handleWsMsg;
+  ws.onerror=()=>setStatus('SERVER UNREACHABLE — is it running?');
+  ws.onclose=()=>{ if(gameRunning){stopGame();backToMenu();} };
+  ws.onerror=()=>{ showWsError(); };
+  ws.onclose=()=>{ if(gameWs===ws) gameWs=null; if(gameRunning){stopGame();backToMenu();} };
+  gameWs=ws;
+}
+
+function hostGame(){
+  mySeat=null;
+  setStatus('CONNECTING TO SERVER...', true);
+  _openWs(()=>gameWs.send(JSON.stringify({type:'create'})));
+}
+
+function joinGame(){
+  mySeat=null;
+  const code=document.getElementById('room-input').value.trim().toUpperCase();
+  if(!code){setStatus('ENTER ROOM CODE');return;}
+  setStatus('JOINING...', true);
+  _openWs(()=>gameWs.send(JSON.stringify({type:'join',roomId:code})));
+}
+
+function myInput(){
+  return mySide==='left'
+    ?{left:!!keys['a'],right:!!keys['d'],up:!!keys['w'],down:!!keys['s']}
+    :{left:!!keys['arrowleft'],right:!!keys['arrowright'],up:!!keys['arrowup'],down:!!keys['arrowdown']};
+}
+function applyPlayerInput(sl,inp){
+  const moveDir=inp.left?-1:inp.right?1:0;
+  const boostDir=moveDir||Math.sign(sl.vx);
+  sl.vx=moveDir*SPEED;
+  sl.grab=false;
+  if(inp.down&&boostDir) sl.vx=boostDir*BOOST_SPEED;
+  if(inp.up&&sl.y>=H-GH-1&&!sl.grab) sl.vy=JUMP;
+}
+let _lastInpStr='',_lastInpAt=0;
+function sendOnlineInput(){
+  if(!gameWs||gameWs.readyState!==1)return;
+  const s=JSON.stringify({type:'input',...myInput()});
+  const now=performance.now();
+  if(s===_lastInpStr&&now-_lastInpAt<250)return; // unchanged input: resend only as keepalive
+  _lastInpStr=s;_lastInpAt=now;
+  gameWs.send(s);
+}
+
+// Move our own slime locally so controls feel instant despite network latency,
+// easing toward the authoritative server position as updates arrive
+function predictOwnSlime(){
+  if(!mySide)return;
+  const sl=mySide==='left'?gs.L:gs.R;
+  const inp=myInput();
+  applyPlayerInput(sl,inp);
+  sl.vy+=GRAV; sl.x+=sl.vx; sl.y+=sl.vy;
+  if(sl.x<SR)sl.x=SR; if(sl.x>W-SR)sl.x=W-SR;
+  if(sl.y>H-GH){sl.y=H-GH;sl.vy=0;}
+  // Only reconcile X. Gravity/jump constants are identical to the server's,
+  // so Y is already correct-shaped locally; blending it toward a ping-delayed
+  // snapshot compares two out-of-phase parabolas and shows up as shaking,
+  // worst during jumps.
+  if(sl.srvX!==undefined){
+    const ex=sl.srvX-sl.x;
+    if(Math.abs(ex)>220) sl.x=sl.srvX;
+    else sl.x+=ex*0.04;
+  }
+  // a ball we are carrying sticks to the predicted slime instead of lagging behind
+  if(gs.ball.owner===mySide){
+    const hd=SR+BR-5;
+    gs.ball.x=sl.x+Math.cos(gs.ball.angle)*hd;
+    gs.ball.y=sl.y+Math.sin(gs.ball.angle)*hd;
+  }
+}
+
+// Left-team seats use WASD, right-team seats use arrow keys — same convention
+// as duo online (left=WASD, right=arrows), just keyed by team instead of side.
+function teamInputKeys(team){
+  return team==='left'
+    ?{left:!!keys['a'],right:!!keys['d'],up:!!keys['w'],down:!!keys['s']}
+    :{left:!!keys['arrowleft'],right:!!keys['arrowright'],up:!!keys['arrowup'],down:!!keys['arrowdown']};
+}
+// Roll: a mid-air 360° spin, usable off a short cooldown ONLY while airborne
+// (no effect on the ground). WASD-side locals use Shift (Space is already
+// Arrow-side's neighbor key on a shared keyboard); everyone else — arrow-side
+// locals and any online player, who always has their own keyboard — uses Space.
+function rollKeyFor(team){
+  const sharedKeyboard=playerMode==='multi'||playerMode==='quadLocal';
+  return (team==='left'&&sharedKeyboard)?'shift':' ';
+}
+function tryRoll(sl,team,key){
+  if(sl.rollCooldown>0) sl.rollCooldown--;
+  if(sl.rollTimer>0) sl.rollTimer--; // counts down the spin animation
+  const down=!!keys[key];
+  const pressedEdge=down&&!sl._rollKeyDown;
+  sl._rollKeyDown=down;
+  const airborne=sl.y<H-GH-1;
+  if(!pressedEdge||sl.rollCooldown>0||sl.rollTimer>0||!airborne) return; // off cooldown, not already mid-roll, and off the ground
+  sl.rollCooldown=ROLL_COOLDOWN_TICKS;
+  sl.rollTimer=ROLL_TICKS;
+  sl.rollDir=team==='left'?1:-1; // left spins clockwise, right counter-clockwise
+  snd.roll();
+}
+// Online: the roll is server-authoritative (avoids a whole class of
+// prediction/reconciliation bugs), so we just detect the key press and send a
+// one-shot request. onlineRollCooldownUI resets optimistically for instant UI
+// feedback, then gets corrected by the server's next state update.
+function tryOnlineRoll(){
+  if(onlineRollCooldownUI>0) onlineRollCooldownUI--;
+  const down=!!keys[' '];
+  const pressedEdge=down&&!onlineRollKeyDown;
+  onlineRollKeyDown=down;
+  const mySlime=mySeat?gs[mySeat]:(mySide==='left'?gs.L:mySide==='right'?gs.R:null);
+  const airborne=mySlime&&mySlime.y<H-GH-1;
+  if(!pressedEdge||onlineRollCooldownUI>0||!airborne) return; // off cooldown, and off the ground
+  onlineRollCooldownUI=ROLL_COOLDOWN_TICKS;
+  snd.roll();
+  if(gameWs&&gameWs.readyState===1) gameWs.send(JSON.stringify({type:'roll'}));
+}
+
+let _lastInpStrQ='',_lastInpAtQ=0;
+function sendOnlineInputQuad(){
+  if(!gameWs||gameWs.readyState!==1||!mySeat)return;
+  const team=(mySeat==='LA'||mySeat==='LK')?'left':'right';
+  const s=JSON.stringify({type:'input',...teamInputKeys(team)});
+  const now=performance.now();
+  if(s===_lastInpStrQ&&now-_lastInpAtQ<250)return;
+  _lastInpStrQ=s;_lastInpAtQ=now;
+  gameWs.send(s);
+}
+function predictOwnSlimeQuad(){
+  if(!mySeat)return;
+  const sl=gs[mySeat];
+  const team=(mySeat==='LA'||mySeat==='LK')?'left':'right';
+  const inp=teamInputKeys(team);
+  applyPlayerInput(sl,inp);
+  sl.vy+=GRAV; sl.x+=sl.vx; sl.y+=sl.vy;
+  if(sl.x<SR)sl.x=SR; if(sl.x>W-SR)sl.x=W-SR;
+  if(sl.y>H-GH){sl.y=H-GH;sl.vy=0;}
+  if(sl.srvX!==undefined){
+    const ex=sl.srvX-sl.x;
+    if(Math.abs(ex)>220) sl.x=sl.srvX;
+    else sl.x+=ex*0.04;
+  }
+  if(gs.ball.owner===mySeat){
+    const hd=SR+BR-5;
+    gs.ball.x=sl.x+Math.cos(gs.ball.angle)*hd;
+    gs.ball.y=sl.y+Math.sin(gs.ball.angle)*hd;
+  }
+}
+
+// ── Menu flow ────────────────────────────────────────────────────────────────
+function showDurationMenu(){
+  document.getElementById('duration-menu').classList.remove('hidden');
+  let hint='';
+  if(playerMode==='multi')
+    hint='Left: <b>W</b> jump · <b>A/D</b> move · <b>S</b> grab &nbsp;|&nbsp; Right: <b>↑</b> jump · <b>←/→</b> move · <b>↓</b> grab';
+  else if(playerMode==='online' && mySide==='left')
+    hint='You are <span class="cyan">CYAN (left)</span> &nbsp;·&nbsp; <b>W</b> jump · <b>A/D</b> move · <b>S</b> grab';
+  else if(playerMode==='online' && mySide==='right')
+    hint='You are <span class="red">RED (right)</span> &nbsp;·&nbsp; <b>↑</b> jump · <b>←/→</b> move · <b>↓</b> grab';
+  else if(playerMode==='quadSolo')
+    hint='You are <span class="red">RED ATTACKER</span> &nbsp;·&nbsp; <b>↑</b> jump · <b>←/→</b> move · <b>↓</b> grab &nbsp;|&nbsp; other 3 slimes are bots';
+  else if(playerMode==='quadLocal')
+    hint='Cyan Attacker: <b>W</b> jump · <b>A/D</b> move · <b>S</b> grab &nbsp;|&nbsp; Red Attacker: <b>↑</b> jump · <b>←/→</b> move · <b>↓</b> grab &nbsp;|&nbsp; both Goalkeepers are bots';
+  else if(playerMode==='quadOnline')
+    hint='You are <span style="color:'+(((mySeat==='LA'||mySeat==='LK'))?'#00f5ff':'#ff3366')+'">'+SEAT_LABELS[mySeat]+'</span> &nbsp;·&nbsp; '+((mySeat==='LA'||mySeat==='LK')?'<b>W</b> jump · <b>A/D</b> move · <b>S</b> grab':'<b>↑</b> jump · <b>←/→</b> move · <b>↓</b> grab');
+  else
+    hint='Arrow keys: <b>↑</b> jump · <b>←/→</b> move · <b>↓</b> grab &nbsp;|&nbsp; You are <span class="red">RED</span>';
+  document.getElementById('control-hint').innerHTML=hint;
+}
+function chooseMode(m){
+  playerMode=m;
+  document.getElementById('menu').classList.add('hidden');
+  showDurationMenu();
+}
+function showQuadMenu(){
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('quad-menu').classList.remove('hidden');
+}
+function chooseModeQuad(m){
+  playerMode=m;
+  document.getElementById('quad-menu').classList.add('hidden');
+  showDurationMenu();
+}
+function startGame(secs){
+  lastDuration=secs;
+  document.getElementById('duration-menu').classList.add('hidden');
+  if((playerMode==='online'||playerMode==='quadOnline') && gameWs){
+    gameWs.send(JSON.stringify({type:'chooseDuration',duration:secs}));
+    return;
+  }
+  resetAll(); timeLeft=secs; startGameInternal();
+}
+function startGameInternal(){
+  document.getElementById('game-area').classList.remove('hidden');
+  // W/canvas/hud sizing is set in resetAll(), which always runs just before this
+  if(isQuadMode()){
+    const ctrlLeft=document.getElementById('ctrl-left'), ctrlRight=document.getElementById('ctrl-right'), ctrlAi=document.getElementById('ctrl-ai');
+    if(playerMode==='quadSolo'){
+      ctrlLeft.style.display='none'; ctrlRight.style.display=''; ctrlAi.style.display='';
+      document.getElementById('ctrl-ai-text').innerHTML='Cyan slimes +<br>your keeper<br>are bots';
+    } else if(playerMode==='quadLocal'){
+      ctrlLeft.style.display=''; ctrlRight.style.display=''; ctrlAi.style.display='';
+      document.getElementById('ctrl-ai-text').innerHTML='Both<br>goalkeepers<br>are bots';
+    } else { // quadOnline
+      const team=(mySeat==='LA'||mySeat==='LK')?'left':'right';
+      ctrlLeft.style.display=team==='left'?'':'none';
+      ctrlRight.style.display=team==='right'?'':'none';
+      ctrlAi.style.display='none';
+    }
+  } else {
+    const isMulti  = playerMode==='multi';
+    const isOnline = playerMode==='online';
+    const isSingle = playerMode==='single';
+    document.getElementById('ctrl-left').style.display  = (isMulti || (isOnline && mySide==='left'))  ? '' : 'none';
+    document.getElementById('ctrl-right').style.display = (isMulti || isSingle || (isOnline && mySide==='right')) ? '' : 'none';
+    document.getElementById('ctrl-ai').style.display    = isSingle ? '' : 'none';
+    document.getElementById('ctrl-ai-text').innerHTML='Cyan is<br>controlled<br>by AI';
+  }
+  gamePaused=false; updatePauseUI();
+  updateHUD(); gameRunning=true; lastFrame=0; accumulator=0;
+  // Timer runs server-side for online; locally for all other modes
+  if(playerMode!=='online' && playerMode!=='quadOnline'){
+    timerId=setInterval(tick,1000);
+  }
+  animId=requestAnimationFrame(loop); getAC();
+}
+function rematch(){
+  document.getElementById('end-screen').classList.add('hidden');
+  if(playerMode==='online' && gameWs && mySide==='left'){
+    gameWs.send(JSON.stringify({type:'rematch',duration:lastDuration}));
+    return;
+  }
+  if(playerMode==='quadOnline' && gameWs && mySeat==='LA'){
+    gameWs.send(JSON.stringify({type:'rematch',duration:lastDuration}));
+    return;
+  }
+  resetAll(); timeLeft=lastDuration; startGameInternal();
+}
+function stopGame(){
+  gameRunning=false; gamePaused=false; updatePauseUI();
+  if(animId){cancelAnimationFrame(animId);animId=null;}
+  if(timerId){clearInterval(timerId);timerId=null;}
+}
+function tick(){
+  if(!gameRunning||gamePaused)return;
+  timeLeft=Math.max(0,timeLeft-1); updateHUD();
+  if(timeLeft<=0){stopGame();endGame();}
+}
+function endGame(){
+  if(tournament&&tournament.cur){ finishTournamentMatch(); return; } // tourney match → back to the bracket, not the normal end screen
+  document.getElementById('game-area').classList.add('hidden');
+  const cl=score.left,cr=score.right;
+  // Which side, if any, is a single human "you" (so we can address them directly)?
+  // Local 2P / quad-local have humans on both sides → no personal "you".
+  let mine=null;
+  if(playerMode==='single') mine='right';                                  // you are RED
+  else if(playerMode==='online') mine=mySide;
+  else if(playerMode==='quadOnline') mine=(mySeat==='LA'||mySeat==='LK')?'left':'right';
+  const wt=document.getElementById('winner-text');
+  if(cl===cr){
+    wt.textContent='DRAW!'; wt.className=''; wt.style.color=''; wt.style.textShadow='';
+    snd.lose();
+  } else {
+    const winSide=cl>cr?'left':'right';
+    if(mine){
+      const youWon=winSide===mine;
+      wt.textContent=youWon?'YOU WIN!':'YOU LOSE!';
+      wt.className='';
+      wt.style.color=youWon?'#3ef07a':'#ff5a76';
+      wt.style.textShadow=youWon?'0 0 16px rgba(62,240,122,0.7)':'0 0 16px rgba(255,90,118,0.6)';
+      youWon?snd.win():snd.lose();
+    } else {
+      wt.textContent=winSide==='left'?'CYAN WINS!':'RED WINS!';
+      wt.className=winSide==='left'?'cyan':'red'; wt.style.color=''; wt.style.textShadow='';
+      snd.win(); // local 2P — someone won, play the fanfare
+    }
+  }
+  document.getElementById('fs-l').textContent=cl;
+  document.getElementById('fs-r').textContent=cr;
+  document.getElementById('rematch-btn').style.display=
+    (playerMode==='online'&&mySide==='right')||(playerMode==='quadOnline'&&mySeat!=='LA')?'none':'';
+  document.getElementById('end-screen').classList.remove('hidden');
+}
+function updateHUD(){
+  document.getElementById('score-left').textContent=score.left;
+  document.getElementById('score-right').textContent=score.right;
+  const m=Math.floor(timeLeft/60),s=timeLeft%60;
+  document.getElementById('timer').textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+function showSettings(){
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('settings-screen').classList.remove('hidden');
+  document.getElementById('setting-airplanes').checked=airplaneAdsEnabled;
+}
+function setAirplaneAds(enabled){
+  airplaneAdsEnabled=!!enabled;
+  try{ localStorage.setItem('cf_airplaneAds',airplaneAdsEnabled?'1':'0'); }catch(e){}
+  if(!airplaneAdsEnabled) adPlane=null;
+}
+function canPauseOfflineBot(){ return gameRunning && playerMode==='single'; }
+function updatePauseUI(){
+  const btn=document.getElementById('pause-btn');
+  const overlay=document.getElementById('pause-overlay');
+  const visible=playerMode==='single' && gameRunning;
+  btn.classList.toggle('visible',visible);
+  btn.textContent=gamePaused?'Resume':'Pause';
+  overlay.classList.toggle('visible',visible&&gamePaused);
+}
+function togglePause(){
+  if(!canPauseOfflineBot())return;
+  gamePaused=!gamePaused;
+  if(!gamePaused){ lastFrame=0; accumulator=0; }
+  updatePauseUI();
+}
+function showMainMenu(){
+  document.getElementById('menu').classList.remove('hidden');
+  loadHallOfFame();
+  setTimeout(connectLobby,0);
+}
+function backToMenu(){
+  stopGame();
+  if(gameWs){gameWs.onclose=null;gameWs.close();gameWs=null;} mySide=null; mySeat=null;
+  onlineRollKeyDown=false; onlineRollCooldownUI=0;
+  tournament=null;
+  ['end-screen','duration-menu','game-area','online-menu','room-panel',
+   'quad-menu','quad-online-menu','quad-room-panel','tournament-setup','bracket-screen',
+   'register-screen','settings-screen'].forEach(
+    id=>document.getElementById(id).classList.add('hidden')
+  );
+  showMainMenu();
+  playerMode=null;
+  resetCopyBtn(); resetCopyBtnQuad();
+}
+
+// ── Tournament (local single-elimination) ────────────────────────────────────
+let tournament=null;      // { size, you, matchSecs, rounds:[[{a,b,winner}]], cur:{r,i}|null, oppName }
+let tpSize=8;
+const TP_NAME_POOL=['Blobby','Gooey','Slick','Bouncer','Splat','Wobble','Jelly','Ooze',
+                    'Squish','Drip','Glob','Puddle','Bubbles','Splosh','Gunk','Zippy'];
+function tpShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function showTournamentSetup(){
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('bracket-screen').classList.add('hidden');
+  document.getElementById('tournament-setup').classList.remove('hidden');
+  setTournamentSize(tpSize);
+}
+function setTournamentSize(n){
+  tpSize=n;
+  document.querySelectorAll('.tp-size-btn').forEach(b=>b.classList.toggle('active',+b.dataset.size===n));
+  // Prefill the roster: You first, then distinct pool names.
+  const names=['You',...tpShuffle(TP_NAME_POOL.slice()).slice(0,n-1)];
+  document.getElementById('tp-names').value=names.join('\n');
+}
+function startTournament(){
+  const raw=document.getElementById('tp-names').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  // Pad/truncate to the chosen size; keep entry 1 as the human ("You").
+  const names=raw.slice(0,tpSize);
+  let filler=tpShuffle(TP_NAME_POOL.filter(n=>!names.includes(n)));
+  let k=0; while(names.length<tpSize) names.push(filler[k++]||('CPU '+(names.length)));
+  const you=names[0];
+  // Seed randomly, but keep the human's exact name so we can find their matches.
+  const seeded=tpShuffle(names.slice());
+  tournament={ size:tpSize, you, matchSecs:60, cur:null, oppName:null, rounds:buildBracket(seeded) };
+  document.getElementById('tournament-setup').classList.add('hidden');
+  document.getElementById('tp-banner').textContent='';
+  showBracketScreen();
+}
+function buildBracket(names){
+  const rounds=[];
+  const r0=[];
+  for(let i=0;i<names.length;i+=2) r0.push({a:names[i],b:names[i+1],winner:null});
+  rounds.push(r0);
+  let count=r0.length;
+  while(count>1){ count=Math.floor(count/2); rounds.push(Array.from({length:count},()=>({a:null,b:null,winner:null}))); }
+  return rounds;
+}
+function tpRoundLabel(r,total){
+  const fromEnd=total-1-r;
+  if(fromEnd===0) return 'FINAL';
+  if(fromEnd===1) return 'SEMIS';
+  if(fromEnd===2) return 'QUARTERS';
+  return 'ROUND '+(r+1);
+}
+function renderBracket(){
+  const t=tournament;
+  document.getElementById('bracket-cols').innerHTML = t.rounds.map((round,r)=>{
+    const cards=round.map(m=>{
+      const cls=nm=>{ let c='tp-slot'; if(nm&&nm===t.you)c+=' tp-you'; if(m.winner&&nm){ c+= (m.winner===nm)?' tp-win':' tp-lose'; } return c; };
+      const esc=s=>(s||'—').replace(/</g,'&lt;');
+      return `<div class="tp-match"><div class="${cls(m.a)}">${esc(m.a)}</div><div class="${cls(m.b)}">${esc(m.b)}</div></div>`;
+    }).join('');
+    return `<div class="tp-col"><div class="tp-round-label">${tpRoundLabel(r,t.rounds.length)}</div>${cards}</div>`;
+  }).join('');
+}
+function tpChampion(){ const last=tournament.rounds[tournament.rounds.length-1][0]; return last.winner; }
+function tpNextHumanMatch(){
+  for(let r=0;r<tournament.rounds.length;r++)
+    for(let i=0;i<tournament.rounds[r].length;i++){
+      const m=tournament.rounds[r][i];
+      if(!m.winner&&(m.a===tournament.you||m.b===tournament.you)) return {r,i};
+    }
+  return null;
+}
+function showBracketScreen(){
+  document.getElementById('game-area').classList.add('hidden');
+  document.getElementById('tournament-setup').classList.add('hidden');
+  document.getElementById('bracket-screen').classList.remove('hidden');
+  renderBracket();
+  const champ=tpChampion(), btn=document.getElementById('tp-action'), champEl=document.getElementById('tp-champion');
+  if(champ){
+    champEl.textContent='🏆 '+champ+(champ===tournament.you?' — YOU WIN THE CUP!':' wins the cup');
+    champEl.classList.remove('hidden');
+    if(!tournament.celebrated){ tournament.celebrated=true; (champ===tournament.you?snd.win():snd.lose()); }
+    btn.textContent='New Tournament'; btn.onclick=showTournamentSetup;
+    return;
+  }
+  champEl.classList.add('hidden');
+  const nm=tpNextHumanMatch();
+  if(nm){
+    const m=tournament.rounds[nm.r][nm.i];
+    const opp=(m.a===tournament.you)?m.b:m.a;
+    btn.textContent=opp?('Play vs '+opp):'Play Next Match';
+  } else {
+    btn.textContent='Simulate to Champion'; // you're out — watch the CPUs finish it
+  }
+  btn.onclick=advanceTournament;
+}
+function tpResolve(r,i,winner){
+  const m=tournament.rounds[r][i]; m.winner=winner;
+  const next=tournament.rounds[r+1];
+  if(next){ const p=next[Math.floor(i/2)]; if(i%2===0)p.a=winner; else p.b=winner; }
+}
+function tpCurrentRound(){ return tournament.rounds.findIndex(rd=>rd.some(m=>m.a&&m.b&&!m.winner)); }
+function advanceTournament(){
+  const r=tpCurrentRound();
+  if(r===-1){ showBracketScreen(); return; }
+  // Auto-resolve every CPU-vs-CPU match in this round first.
+  const round=tournament.rounds[r];
+  for(let i=0;i<round.length;i++){
+    const m=round[i];
+    if(m.winner||!m.a||!m.b) continue;
+    if(m.a===tournament.you||m.b===tournament.you) continue;
+    tpResolve(r,i,Math.random()<0.5?m.a:m.b);
+  }
+  const yi=round.findIndex(m=>!m.winner&&(m.a===tournament.you||m.b===tournament.you));
+  if(yi>=0){ playTournamentMatch(r,yi); }        // your turn — go play it
+  else { advanceTournament(); }                   // eliminated/bye — keep simming to the end
+}
+function playTournamentMatch(r,i){
+  const m=tournament.rounds[r][i];
+  const opp=(m.a===tournament.you)?m.b:m.a;
+  tournament.cur={r,i}; tournament.oppName=opp;
+  document.getElementById('bracket-screen').classList.add('hidden');
+  playerMode='single'; // You control RED (right); the opponent is the AI (cyan)
+  resetAll(); timeLeft=tournament.matchSecs; startGameInternal();
+  document.getElementById('ctrl-ai-text').innerHTML='Cyan =<br>'+opp.replace(/</g,'&lt;');
+}
+function finishTournamentMatch(){
+  const {r,i}=tournament.cur; tournament.cur=null;
+  const m=tournament.rounds[r][i], you=tournament.you, opp=tournament.oppName;
+  // Human is RED → score.right; AI is CYAN → score.left. Ties break on a coin flip.
+  let winner = score.right>score.left ? you : score.left>score.right ? opp : (Math.random()<0.5?you:opp);
+  const tie=score.left===score.right;
+  tpResolve(r,i,winner);
+  document.getElementById('tp-banner').textContent =
+    (winner===you?('You beat '+opp+'!'):('You lost to '+opp))+(tie?' (coin-toss tiebreak)':'')+`  —  ${score.right}:${score.left}`;
+  // Per-match feedback. If this win also clinched the cup, skip it here so the
+  // bigger cup fanfare in showBracketScreen isn't stepped on.
+  if(winner!==you) snd.lose();
+  else if(tpChampion()!==you) snd.win();
+  showBracketScreen();
+}
+function quitTournament(){ tournament=null; backToMenu(); }
+
+// ── Registration + Hall of Fame ──────────────────────────────────────────────
+function updateNameLabel(){
+  const el=document.getElementById('name-label');
+  if(el) el.textContent = playerName ? playerName : 'Loony Sign In';
+}
+function showRegister(){
+  document.getElementById('menu').classList.add('hidden');
+  const s=document.getElementById('register-screen');
+  s.classList.remove('hidden');
+  document.getElementById('reg-input').value=playerName||'';
+  document.getElementById('reg-msg').textContent='';
+  document.getElementById('reg-record').textContent='';
+  document.getElementById('reg-input').focus();
+}
+function saveRegister(){
+  const name=document.getElementById('reg-input').value.trim();
+  const msg=document.getElementById('reg-msg');
+  if(name.length<2){ msg.textContent='Enter your OnePass user name'; return; }
+  msg.style.color='#7fb0ff'; msg.textContent='Checking OnePass...';
+  fetch(API_BASE+'/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
+    .then(r=>r.json())
+    .then(d=>{
+      if(!d.ok){ msg.style.color='#ff9a5a'; msg.textContent=d.error||'OnePass user not found'; return; }
+      playerName=d.name; storeName(playerName); updateNameLabel();
+      // If already connected to a game server, re-identify under the new name.
+      if(gameWs&&gameWs.readyState===1){ try{ gameWs.send(JSON.stringify({type:'identify',name:playerName})); }catch(e){} }
+      const rec=d.record||{wins:0,losses:0,games:0};
+      msg.style.color='#7fe0a0'; msg.textContent='Playing as '+playerName;
+      document.getElementById('reg-record').textContent='Record: '+rec.wins+'W / '+rec.losses+'L ('+rec.games+' games)';
+      setTimeout(backToMenu,900);
+    })
+    .catch(()=>{ msg.style.color='#ff9a5a'; msg.textContent='Server unreachable — is it running?'; });
+}
+// Real OnePass authentication replaces the legacy nickname picker above.
+function friendlyOnePassError(error){
+  const code=error&&error.code||'';
+  if(code==='auth/invalid-credential'||code==='auth/wrong-password'||code==='auth/user-not-found') return 'Wrong email/password, or this Loony account is not registered yet.';
+  if(code==='auth/invalid-email') return 'Enter a valid email address.';
+  if(code==='auth/popup-closed-by-user') return 'Google sign-in was closed before it finished.';
+  if(code==='auth/operation-not-allowed') return 'This sign-in method is not enabled in Firebase Authentication.';
+  return error&&error.message||String(error||'Loony sign-in failed');
+}
+function showOnePassError(text){ const el=document.getElementById('reg-msg'); if(el){el.style.color='#ff9a5a';el.textContent=text;} }
+function updateOnePassScreen(user){
+  document.getElementById('onepass-fields').classList.toggle('hidden',Boolean(user));
+  document.getElementById('onepass-email-btn').classList.toggle('hidden',Boolean(user));
+  document.getElementById('onepass-google-btn').classList.toggle('hidden',Boolean(user));
+  document.getElementById('loony-register-btn').classList.toggle('hidden',Boolean(user));
+  document.getElementById('onepass-out-btn').classList.toggle('hidden',!user);
+}
+function showRegister(){
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('register-screen').classList.remove('hidden');
+  document.getElementById('reg-msg').textContent='';
+  document.getElementById('reg-record').textContent='';
+  const user=window.onePass&&window.onePass.currentUser(); updateOnePassScreen(user);
+  if(user) document.getElementById('reg-msg').textContent='Signed in as '+(playerName||user.email);
+  else document.getElementById('reg-email').focus();
+}
+async function registerOnePassToken(token){
+  const msg=document.getElementById('reg-msg');
+  if(msg){msg.style.color='#7fb0ff';msg.textContent='Verifying Loony user...';}
+  const response=await fetch(API_BASE+'/api/register',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token}});
+  const d=await response.json();
+  if(!d.ok) throw new Error(d.error||'Loony sign-in failed');
+  onePassToken=token; loonyHandoffToken=token; playerName=d.name; storeName(playerName); updateNameLabel();
+  if(gameWs&&gameWs.readyState===1){try{gameWs.send(JSON.stringify({type:'identify',idToken:token}));}catch(e){}}
+  const rec=d.record||{wins:0,losses:0,games:0};
+  if(msg){msg.style.color='#7fe0a0';msg.textContent='Playing as '+playerName;}
+  document.getElementById('reg-record').textContent='Record: '+rec.wins+'W / '+rec.losses+'L ('+rec.games+' games)';
+  updateOnePassScreen(window.onePass.currentUser()||{});
+}
+async function signInOnePassEmail(){try{await window.onePass.email(document.getElementById('reg-email').value.trim(),document.getElementById('reg-password').value);}catch(e){showOnePassError(friendlyOnePassError(e));}}
+async function signInOnePassGoogle(){try{await window.onePass.google();}catch(e){showOnePassError(friendlyOnePassError(e));}}
+async function signOutOnePass(){try{loonyHandoffToken=null; onePassToken=null; await window.onePass.out();document.getElementById('reg-record').textContent='';showOnePassError('Signed out');}catch(e){showOnePassError(friendlyOnePassError(e));}}
+function openLoonyRegister(){ window.open('https://loony.epizy.com/','_blank','noopener'); }
+async function autoSignInFromLoonyToken(token){
+  token=String(token||'').trim();
+  if(!token||token===onePassToken)return;
+  try{ await registerOnePassToken(token); }
+  catch(e){ showOnePassError(friendlyOnePassError(e)); }
+}
+function consumeLoonyHashToken(){
+  const hash=new URLSearchParams((location.hash||'').replace(/^#/,''));
+  const token=hash.get('loonyToken')||hash.get('idToken')||hash.get('token');
+  if(!token)return;
+  history.replaceState(null,'',location.pathname+location.search);
+  autoSignInFromLoonyToken(token);
+}
+window.addEventListener('message',e=>{
+  if(e.origin!=='https://loony.epizy.com')return;
+  const data=e.data||{};
+  if(data.type==='loony-auth'&&data.idToken) autoSignInFromLoonyToken(data.idToken);
+});
+consumeLoonyHashToken();
+
+function loadHallOfFame(){
+  const body=document.getElementById('hof-body');
+  body.innerHTML='<div class="hof-empty">Loading…</div>';
+  fetch(API_BASE+'/api/halloffame')
+    .then(r=>r.json())
+    .then(d=>renderHallOfFame(d.players||[]))
+    .catch(()=>{ body.innerHTML='<div class="hof-empty">Server unreachable — is it running?</div>'; });
+}
+function renderHallOfFame(players){
+  const body=document.getElementById('hof-body');
+  if(!players.length){ body.innerHTML='<div class="hof-empty">No records yet — play an online match!</div>'; return; }
+  const esc=s=>String(s).replace(/</g,'&lt;');
+  const rows=players.map((p,i)=>{
+    const pct=p.games?Math.round(p.wins/p.games*100):0;
+    const me=playerName&&p.name.toLowerCase()===playerName.toLowerCase();
+    return `<tr class="${me?'me':''} ${i===0?'hof-top1':''}">
+      <td class="l hof-rank">${i===0?'🏆':(i+1)}</td>
+      <td class="l">${esc(p.name)}</td>
+      <td>${p.wins}</td><td>${p.losses}</td><td>${pct}%</td></tr>`;
+  }).join('');
+  body.innerHTML=`<table class="hof-table">
+    <thead><tr><th class="l">#</th><th class="l">NAME</th><th>W</th><th>L</th><th>WIN%</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+// ── Reset ────────────────────────────────────────────────────────────────────
+function resetPos(){
+  Object.assign(gs.L,{x:250,y:H-GH,vx:0,vy:0,grab:false,hasBall:false,glTime:0,targetX:250,cooldown:0,stable:true,lastBY:0,stuck:0});
+  Object.assign(gs.R,{x:750,y:H-GH,vx:0,vy:0,grab:false,hasBall:false,glTime:0});
+  const bvx = playerMode==='single' ? (Math.random()*6-3) : 0;
+  const bx  = playerMode==='single' ? W/2+(Math.random()*100-50) : W/2;
+  const by  = playerMode==='single' ? 160+Math.random()*100 : H/2-60;
+  Object.assign(gs.ball,{x:bx,y:by,vx:bvx,vy:0,owner:null,angle:0,angVel:0});
+}
+function resetPosQuad(){
+  Object.assign(gs.LA,{x:W*0.32,y:H-GH,vx:0,vy:0,grab:false,hasBall:false,glTime:0,targetX:W*0.32,cooldown:0,stuck:0,lastBY:0});
+  Object.assign(gs.LK,{x:W*0.09,y:H-GH,vx:0,vy:0,grab:false,hasBall:false,glTime:0});
+  Object.assign(gs.RA,{x:W*0.68,y:H-GH,vx:0,vy:0,grab:false,hasBall:false,glTime:0,targetX:W*0.68,cooldown:0,stuck:0,lastBY:0});
+  Object.assign(gs.RK,{x:W*0.91,y:H-GH,vx:0,vy:0,grab:false,hasBall:false,glTime:0});
+  Object.assign(gs.ball,{x:W/2,y:H/2-60,vx:0,vy:0,owner:null,angle:0,angVel:0});
+}
+function resetAll(){
+  // Must run before spawn positions are computed below, since they're
+  // expressed relative to W (e.g. W*0.32) — this is the common step
+  // before all three "start a game" paths (local start, rematch, online).
+  W = isQuadMode() ? W_QUAD : W_DUO;
+  canvas.width = W;
+  document.getElementById('hud').style.width = W+'px';
+  if(isQuadMode()) resetPosQuad(); else resetPos();
+  // Roll cooldown resets only here (true match start), not on every goal via
+  // resetPos/resetPosQuad — otherwise scoring would refill it for free.
+  [gs.L,gs.R,gs.LA,gs.LK,gs.RA,gs.RK].forEach(sl=>{
+    sl.rollCooldown=0; sl.rollTimer=0; sl.rollDir=0; sl._rollKeyDown=false;
+  });
+  score={left:0,right:0}; particles=[]; ballTrail.length=0;
+}
+
+// ── Particles ────────────────────────────────────────────────────────────────
+function spawnGoal(x,y,col){
+  for(let i=0;i<70;i++){
+    const a=Math.random()*Math.PI*2, sp=Math.random()*9+2;
+    particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-5,
+      life:1, col, size:Math.random()*5+2, type:'goal'});
+  }
+}
+function spawnHit(x,y){
+  for(let i=0;i<12;i++){
+    const a=Math.random()*Math.PI*2, sp=Math.random()*4+1;
+    particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.7,col:'#ffffff',size:Math.random()*2+1,type:'hit'});
+  }
+}
+function updateParticles(){
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.x+=p.vx; p.y+=p.vy; p.vy+=0.25; p.life-=0.018;
+    if(p.life<=0) particles.splice(i,1);
+  }
+}
+
+// ── AI ───────────────────────────────────────────────────────────────────────
+function updateAI(){
+  const ai=gs.L, ball=gs.ball;
+  if(ai.cooldown>0){
+    ai.cooldown--;
+    const d=ai.targetX-ai.x;
+    ai.vx=Math.abs(d)>10?Math.sign(d)*SPEED*Math.min(Math.abs(d)/50,1):0;
+    return;
+  }
+  if(ai.stable&&timeLeft>55){
+    ai.targetX=200; ai.vx=0;
+    if(Math.abs(ball.x-ai.x)<150||timeLeft<=55){ai.stable=false;ai.cooldown=15;}
+    return;
+  }
+  const OGX=W-GW/2;
+  let tx=ball.x,ty=ball.y,tvx=ball.vx,tvy=ball.vy,preds=[];
+  for(let t=0;t<100;t++){
+    tvy+=GRAV;tvx*=BDAMP;tx+=tvx;ty+=tvy;
+    if(tx<BR){tx=BR;tvx=-tvx*BBOUNCE;} if(tx>W-BR){tx=W-BR;tvx=-tvx*BBOUNCE;}
+    preds.push({x:tx,y:ty,time:t});
+    if(ty>H-GH-BR){ty=H-GH-BR;tvy=-tvy*BBOUNCE;break;}
+  }
+  const dOG=Math.abs(ball.x-OGX),dAG=Math.abs(ball.x-GW/2),aiD=Math.abs(ai.x-ball.x);
+  const mvAI=ball.vx<-1, bh=H-GH-ball.y;
+  const stuck=Math.abs(ball.y-ai.lastBY)<5&&Math.abs(ball.vx)<2;
+  ai.stuck=stuck?ai.stuck+1:0; ai.lastBY=ball.y;
+  let nTX=ai.targetX,jump=false,grab=false,ms=SPEED;
+  if(dOG<dAG*1.5||(ball.x>W*0.35&&!mvAI)){
+    nTX=bh>60&&aiD<150?ball.x-45:bh<30&&aiD<100?ball.x-20:ball.x-30;
+    ms=SPEED*1.1;
+    if(aiD<100){
+      if(ai.stuck>30){jump=true;nTX=ball.x-40;}
+      else if(bh<35&&aiD<60&&!ai.hasBall&&ball.vy>-2) grab=true;
+      else if(bh>30&&bh<90&&ai.y>=H-GH-1){
+        const ttr=Math.abs(ai.x-ball.x)/SPEED;
+        const bhy=ball.y+ball.vy*ttr+0.5*GRAV*ttr*ttr;
+        if(bhy>H-GH-100&&bhy<H-GH-20) jump=true;
+      }
+    }
+  } else if(ball.x<W*0.65||mvAI){
+    let bx=ball.x;
+    for(let p of preds){if(p.x<W*0.4&&Math.abs(ai.x-p.x)/(SPEED*1.2)<=p.time+5){bx=p.x;break;}}
+    nTX=bx;
+    if(ball.x<GW*2.5&&mvAI){nTX=Math.max(ball.x-10,SR);ms=SPEED*1.2;if(aiD<120&&bh<100)jump=true;}
+    if(ai.stuck>20&&ball.x<W*0.3){jump=true;nTX=ball.x+30;}
+  } else {
+    nTX=W*0.4;
+    for(let p of preds){
+      if(p.y<H-GH-50&&Math.abs(p.x-W*0.4)<100){
+        const ttr=Math.abs(ai.x-p.x)/SPEED;
+        if(ttr<p.time&&p.time<30){nTX=p.x;if(p.time<20&&ai.y>=H-GH-1)jump=true;break;}
+      }
+    }
+  }
+  if(Math.abs(nTX-ai.targetX)>15){ai.targetX=nTX;ai.cooldown=10;}
+  ai.grab=grab;
+  const diff=ai.targetX-ai.x, ab=Math.abs(diff);
+  ai.vx=ab>10?Math.sign(diff)*ms*Math.min(ab/50,1):0;
+  if(jump&&ai.vy===0&&!ai.grab) ai.vy=JUMP;
+}
+
+// ── Quad (2v2) bot AI ─────────────────────────────────────────────────────────
+// Simpler than the tuned single-player AI above, but generalized by team so
+// the same function drives an attacker bot on either side.
+
+// Once a bot has the ball, drive forward for a short window then let go —
+// without this, a bot standing still re-grabs its own weak release forever
+// (the ball pops up, falls right back into reach, repeat).
+function botCarryBall(sl,forwardDir){
+  if(sl.holdTimer===undefined||sl.holdTimer<=0) sl.holdTimer=10;
+  // Carrying at normal SPEED (not boosted) — matches how human-controlled
+  // grabbing works elsewhere in the game, so a defender chasing at up to
+  // SPEED can actually catch a carrier instead of a guaranteed breakaway.
+  sl.vx=forwardDir*SPEED;
+  sl.grab=true;
+  sl.holdTimer--;
+  if(sl.holdTimer<=0) sl.grab=false; // physics releases this same tick using the vx above as kick force
+}
+
+// Bots re-aim at the ball's current spot on a ~150ms cadence instead of
+// every tick, so they feel like they have human reaction time rather than
+// omniscient instant tracking. (A previous version tried to gate this on
+// "did the target move more than 15px", but a continuously-moving ball
+// keeps re-triggering that check every tick, which pins the timer at its
+// starting value forever and freezes the bot in place — this fixes that
+// by just re-aiming unconditionally once the cooldown elapses.)
+function botRetarget(sl,rawTarget){
+  if(sl.retargetCooldown===undefined||sl.retargetCooldown<=0){
+    sl.targetX=rawTarget;
+    sl.retargetCooldown=9;
+  } else {
+    sl.retargetCooldown--;
+  }
+}
+
+function updateAttackerBot(sl,ball,team){
+  const dir=team==='left'?1:-1;
+  if(sl.hasBall){ botCarryBall(sl,dir); return; }
+  const baseX=team==='left'?W*0.32:W*0.68;
+  const engageZone=team==='left'?ball.x<W*0.72:ball.x>W*0.28;
+  const bh=H-GH-ball.y, dist=Math.abs(sl.x-ball.x);
+
+  let rawTarget=baseX;
+  if(engageZone) rawTarget=ball.x-dir*35;
+  botRetarget(sl,rawTarget);
+
+  const stuck=Math.abs(ball.y-sl.lastBY)<5&&Math.abs(ball.vx)<2;
+  sl.stuck=stuck?sl.stuck+1:0; sl.lastBY=ball.y;
+
+  const closeToBall=dist<70, ballLow=bh<45;
+  sl.grab=engageZone&&closeToBall&&ballLow&&!sl.hasBall&&ball.vy>-2;
+  let jump=false;
+  if(engageZone&&closeToBall&&bh>25&&bh<110&&sl.y>=H-GH-1&&!sl.grab){
+    const ttr=dist/SPEED;
+    const bhy=ball.y+ball.vy*ttr+0.5*GRAV*ttr*ttr;
+    if(bhy>H-GH-100&&bhy<H-GH-15) jump=true;
+  }
+  if(sl.stuck>30){jump=true;sl.targetX=ball.x-dir*40;}
+
+  const diff=sl.targetX-sl.x, ab=Math.abs(diff);
+  // Plain SPEED — no speed edge over a human player.
+  sl.vx=ab>10?Math.sign(diff)*SPEED*Math.min(ab/50,1):0;
+  if(jump&&sl.vy===0&&!sl.grab) sl.vy=JUMP;
+}
+
+function updateKeeperBot(sl,ball,team){
+  const dir=team==='left'?1:-1;
+  if(sl.hasBall){ botCarryBall(sl,dir); return; }
+  const baseX=team==='left'?W*0.09:W*0.91;
+  const patrolMin=team==='left'?SR:W*0.75;
+  const patrolMax=team==='left'?W*0.25:W-SR;
+  const nearOwnThird=team==='left'?ball.x<W*0.4:ball.x>W*0.6;
+  // A shot this close to goal is urgent — react to it immediately instead
+  // of on the usual reaction cadence, like a real keeper snapping to attention.
+  const dangerZone=team==='left'?ball.x<W*0.22:ball.x>W*0.78;
+
+  let rawTarget=baseX;
+  if(nearOwnThird) rawTarget=Math.max(patrolMin,Math.min(patrolMax,ball.x));
+  if(dangerZone){ sl.targetX=rawTarget; sl.retargetCooldown=0; }
+  else botRetarget(sl,rawTarget);
+
+  const diff=sl.targetX-sl.x, ab=Math.abs(diff);
+  sl.vx=ab>8?Math.sign(diff)*SPEED*Math.min(ab/40,1):0;
+
+  const bh=H-GH-ball.y, dist=Math.abs(ball.x-sl.x), closeToBall=dist<55, ballLow=bh<55;
+  sl.grab=nearOwnThird&&closeToBall&&ballLow&&!sl.hasBall&&ball.vy>-2;
+
+  // Proactively jump to meet a ball that WILL be at a catchable height by
+  // the time the keeper gets under it — reacting only once a ball is
+  // already low (the old condition) means anything above ~55px sails
+  // straight over a grounded keeper into the goal, uncontested.
+  if(nearOwnThird&&closeToBall&&sl.y>=H-GH-1&&!sl.grab){
+    const ttr=dist/SPEED;
+    const bhy=ball.y+ball.vy*ttr+0.5*GRAV*ttr*ttr;
+    if(bhy>H-GH-105&&bhy<H-GH-15) sl.vy=JUMP;
+  }
+}
+
+// ── Physics ──────────────────────────────────────────────────────────────────
+function physics(){
+  if(isQuadMode()){ physicsQuad(); return; }
+  if(playerMode==='online'){
+    sendOnlineInput(); tryOnlineRoll(); predictOwnSlime(); return; // server owns the game; we predict our own slime
+  }
+
+  // Controls
+  if(playerMode==='multi'){
+    applyPlayerInput(gs.L,{left:!!keys['a'],right:!!keys['d'],up:!!keys['w'],down:!!keys['s']});
+    tryRoll(gs.L,'left',rollKeyFor('left'));
+    applyPlayerInput(gs.R,{left:!!keys['arrowleft'],right:!!keys['arrowright'],up:!!keys['arrowup'],down:!!keys['arrowdown']});
+    tryRoll(gs.R,'right',rollKeyFor('right'));
+  } else {
+    applyPlayerInput(gs.R,{
+      left:!!keys['arrowleft']||!!keys['a'],
+      right:!!keys['arrowright']||!!keys['d'],
+      up:!!keys['arrowup']||!!keys['w'],
+      down:!!keys['arrowdown']||!!keys['s']
+    });
+    tryRoll(gs.R,'right',rollKeyFor('right'));
+    updateAI();
+  }
+
+  // Slime movement + goal-walk detection
+  [[gs.L,0],[gs.R,1]].forEach(([sl,idx])=>{
+    sl.vy+=GRAV; sl.x+=sl.vx; sl.y+=sl.vy;
+    if(sl.x<SR)sl.x=SR; if(sl.x>W-SR)sl.x=W-SR;
+    if(sl.y>H-GH){sl.y=H-GH;sl.vy=0;}
+    const inOwn=(idx===0&&sl.x<GW)||(idx===1&&sl.x>W-GW);
+    if(inOwn){
+      sl.glTime+=1/60;
+      if(sl.glTime>=1){
+        snd.goal();
+        if(idx===0){score.right++;spawnGoal(GW/2,H-GH-60,'#ff3366');}
+        else       {score.left++ ;spawnGoal(W-GW/2,H-GH-60,'#00f5ff');}
+        updateHUD(); resetPos();
+      }
+    } else sl.glTime=0;
+  });
+
+  // Ball
+  const b=gs.ball;
+  if(b.owner){
+    const gr=b.owner==='left'?gs.L:gs.R, dir=b.owner==='left'?1:-1;
+    b.angVel+=(-gr.vx*0.008*dir); b.angVel*=0.85; b.angle+=b.angVel;
+    if(b.owner==='left'){
+      if(b.angle<-Math.PI/2){b.angle=-Math.PI/2;b.angVel=0;}
+      else if(b.angle>Math.PI/2){b.angle=Math.PI/2;b.angVel=0;}
+    } else {
+      while(b.angle<0)b.angle+=Math.PI*2; while(b.angle>Math.PI*2)b.angle-=Math.PI*2;
+      if(b.angle<Math.PI/2){b.angle=Math.PI/2;b.angVel=0;}
+      else if(b.angle>3*Math.PI/2){b.angle=3*Math.PI/2;b.angVel=0;}
+    }
+    const hd=SR+BR-5;
+    b.x=gr.x+Math.cos(b.angle)*hd; b.y=gr.y+Math.sin(b.angle)*hd;
+    b.vx=gr.vx; b.vy=gr.vy;
+    if(!gr.grab){
+      const sp=Math.abs(b.angVel)*20;
+      b.vx=gr.vx*1.5+Math.cos(b.angle)*(3+sp);
+      b.vy=gr.vy-2+Math.sin(b.angle)*sp*0.3;
+      snd.release(b.angVel);
+      b.owner=null; b.angle=0; b.angVel=0; gr.hasBall=false;
+    }
+  } else {
+    b.vy+=GRAV; b.vx*=BDAMP; b.x+=b.vx; b.y+=b.vy;
+  }
+
+  // Ball walls/floor
+  if(b.x<BR){b.x=BR;b.vx=-b.vx*BBOUNCE;snd.wall();}
+  if(b.x>W-BR){b.x=W-BR;b.vx=-b.vx*BBOUNCE;snd.wall();}
+  if(b.y>H-GH-BR){const imp=Math.abs(b.vy);b.y=H-GH-BR;b.vy=-b.vy*BBOUNCE;if(imp>1.5)snd.bounce(imp);}
+  if(b.y<BR){b.y=BR;b.vy=-b.vy*BBOUNCE;}
+
+  // Ball in goal
+  if(b.x<=BR&&b.y>H-GH-GHEIGHT){
+    snd.goal();score.right++;spawnGoal(GW/2,H-GH-60,'#ff3366');updateHUD();resetPos();return;
+  }
+  if(b.x>=W-BR&&b.y>H-GH-GHEIGHT){
+    snd.goal();score.left++;spawnGoal(W-GW/2,H-GH-60,'#00f5ff');updateHUD();resetPos();return;
+  }
+
+  // Slime-ball collision
+  [[gs.L,'left',gs.R],[gs.R,'right',gs.L]].forEach(([sl,nm,other])=>{
+    const dx=b.x-sl.x,dy=b.y-sl.y,dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist<SR+BR){
+      if(b.owner&&b.owner!==nm){
+        const sp=Math.hypot(sl.vx,sl.vy);
+        if(sp>2||Math.abs(sl.vy)>5){
+          const ang=Math.atan2(dy,dx);
+          b.owner=null;b.angle=0;b.angVel=0;other.hasBall=false;
+          const kick=sl.rollTimer>0?ROLL_HIT_SPEED:8; // rolling = harder knock-away
+          b.vx=Math.cos(ang)*kick+sl.vx;b.vy=Math.sin(ang)*kick+sl.vy;
+          spawnHit(b.x,b.y); if(sl.rollTimer>0) snd.roll(); else snd.hit(sp);
+        }
+      } else if(sl.grab&&!b.owner){
+        b.owner=nm;b.angle=Math.atan2(dy,dx);b.angVel=0;sl.hasBall=true;snd.grab();
+      } else if(!b.owner){
+        const ang=Math.atan2(dy,dx);
+        if(b.y<sl.y||Math.abs(ang)<Math.PI*0.5){
+          b.x=sl.x+Math.cos(ang)*(SR+BR);b.y=sl.y+Math.sin(ang)*(SR+BR);
+          if(sl.rollTimer>0){
+            // Rolling into a loose ball rockets it away — hard hit, no clamp.
+            b.vx=Math.cos(ang)*ROLL_HIT_SPEED+sl.vx;b.vy=Math.sin(ang)*ROLL_HIT_SPEED+sl.vy;
+            spawnHit(b.x,b.y);snd.roll();
+          } else {
+            const sp=Math.hypot(b.vx,b.vy);
+            b.vx=Math.cos(ang)*sp*1.5+sl.vx*0.5;b.vy=Math.sin(ang)*sp*1.5+sl.vy*0.5;
+            const ns=Math.hypot(b.vx,b.vy);
+            if(ns>MAXSPEED){b.vx*=MAXSPEED/ns;b.vy*=MAXSPEED/ns;}
+            spawnHit(b.x,b.y);snd.hit(sp);
+          }
+        }
+      }
+    }
+  });
+}
+
+// ── Physics (Quad / 2v2) ──────────────────────────────────────────────────────
+function physicsQuad(){
+  if(playerMode==='quadOnline'){
+    sendOnlineInputQuad(); tryOnlineRoll(); predictOwnSlimeQuad(); return; // server owns the game
+  }
+
+  const {LA,LK,RA,RK}=gs, roster=[LA,LK,RA,RK];
+  const applyHuman=(sl,team)=>{
+    applyPlayerInput(sl,teamInputKeys(team));
+  };
+
+  if(playerMode==='quadSolo'){
+    applyHuman(RA,'right');
+    tryRoll(RA,'right',rollKeyFor('right'));
+    updateAttackerBot(LA,gs.ball,'left');
+    updateKeeperBot(LK,gs.ball,'left');
+    updateKeeperBot(RK,gs.ball,'right');
+  } else { // quadLocal
+    applyHuman(LA,'left');
+    tryRoll(LA,'left',rollKeyFor('left'));
+    applyHuman(RA,'right');
+    tryRoll(RA,'right',rollKeyFor('right'));
+    updateKeeperBot(LK,gs.ball,'left');
+    updateKeeperBot(RK,gs.ball,'right');
+  }
+
+  // Slime movement + goal-walk detection
+  roster.forEach(sl=>{
+    sl.vy+=GRAV; sl.x+=sl.vx; sl.y+=sl.vy;
+    if(sl.x<SR)sl.x=SR; if(sl.x>W-SR)sl.x=W-SR;
+    if(sl.y>H-GH){sl.y=H-GH;sl.vy=0;}
+    const inOwn=(sl.team==='left'&&sl.x<GW)||(sl.team==='right'&&sl.x>W-GW);
+    if(inOwn){
+      sl.glTime+=1/60;
+      if(sl.glTime>=1){
+        snd.goal();
+        if(sl.team==='left'){score.right++;spawnGoal(GW/2,H-GH-60,'#ff3366');}
+        else                {score.left++ ;spawnGoal(W-GW/2,H-GH-60,'#00f5ff');}
+        updateHUD(); resetPosQuad();
+      }
+    } else sl.glTime=0;
+  });
+
+  // Ball
+  const b=gs.ball;
+  if(b.owner){
+    const gr=roster.find(s=>s.id===b.owner), dir=gr.team==='left'?1:-1;
+    b.angVel+=(-gr.vx*0.008*dir); b.angVel*=0.85; b.angle+=b.angVel;
+    if(gr.team==='left'){
+      if(b.angle<-Math.PI/2){b.angle=-Math.PI/2;b.angVel=0;}
+      else if(b.angle>Math.PI/2){b.angle=Math.PI/2;b.angVel=0;}
+    } else {
+      while(b.angle<0)b.angle+=Math.PI*2; while(b.angle>Math.PI*2)b.angle-=Math.PI*2;
+      if(b.angle<Math.PI/2){b.angle=Math.PI/2;b.angVel=0;}
+      else if(b.angle>3*Math.PI/2){b.angle=3*Math.PI/2;b.angVel=0;}
+    }
+    const hd=SR+BR-5;
+    b.x=gr.x+Math.cos(b.angle)*hd; b.y=gr.y+Math.sin(b.angle)*hd;
+    b.vx=gr.vx; b.vy=gr.vy;
+    if(!gr.grab){
+      const sp=Math.abs(b.angVel)*20;
+      b.vx=gr.vx*1.5+Math.cos(b.angle)*(3+sp);
+      b.vy=gr.vy-2+Math.sin(b.angle)*sp*0.3;
+      snd.release(b.angVel);
+      b.owner=null; b.angle=0; b.angVel=0; gr.hasBall=false;
+    }
+  } else {
+    b.vy+=GRAV; b.vx*=BDAMP; b.x+=b.vx; b.y+=b.vy;
+  }
+
+  // Ball walls/floor
+  if(b.x<BR){b.x=BR;b.vx=-b.vx*BBOUNCE;snd.wall();}
+  if(b.x>W-BR){b.x=W-BR;b.vx=-b.vx*BBOUNCE;snd.wall();}
+  if(b.y>H-GH-BR){const imp=Math.abs(b.vy);b.y=H-GH-BR;b.vy=-b.vy*BBOUNCE;if(imp>1.5)snd.bounce(imp);}
+  if(b.y<BR){b.y=BR;b.vy=-b.vy*BBOUNCE;}
+
+  // Ball in goal
+  if(b.x<=BR&&b.y>H-GH-GHEIGHT){
+    snd.goal();score.right++;spawnGoal(GW/2,H-GH-60,'#ff3366');updateHUD();resetPosQuad();return;
+  }
+  if(b.x>=W-BR&&b.y>H-GH-GHEIGHT){
+    snd.goal();score.left++;spawnGoal(W-GW/2,H-GH-60,'#00f5ff');updateHUD();resetPosQuad();return;
+  }
+
+  // Slime-ball collision (team-aware: a teammate never steals from a teammate)
+  roster.forEach(sl=>{
+    const dx=b.x-sl.x,dy=b.y-sl.y,dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist>=SR+BR) return;
+    if(b.owner===sl.id) return; // already the owner, handled above
+    if(b.owner){
+      const owner=roster.find(s=>s.id===b.owner);
+      if(owner&&owner.team!==sl.team){
+        const sp=Math.hypot(sl.vx,sl.vy);
+        if(sp>2||Math.abs(sl.vy)>5){
+          const ang=Math.atan2(dy,dx);
+          b.owner=null;b.angle=0;b.angVel=0;owner.hasBall=false;
+          const kick=sl.rollTimer>0?ROLL_HIT_SPEED:8; // rolling = harder knock-away
+          b.vx=Math.cos(ang)*kick+sl.vx;b.vy=Math.sin(ang)*kick+sl.vy;
+          spawnHit(b.x,b.y); if(sl.rollTimer>0) snd.roll(); else snd.hit(sp);
+        }
+      }
+      // else: teammate holds the ball — ignore, no interaction
+    } else if(sl.grab){
+      b.owner=sl.id;b.angle=Math.atan2(dy,dx);b.angVel=0;sl.hasBall=true;snd.grab();
+    } else {
+      const ang=Math.atan2(dy,dx);
+      if(b.y<sl.y||Math.abs(ang)<Math.PI*0.5){
+        b.x=sl.x+Math.cos(ang)*(SR+BR);b.y=sl.y+Math.sin(ang)*(SR+BR);
+        if(sl.rollTimer>0){
+          // Rolling into a loose ball rockets it away — hard hit, no clamp.
+          b.vx=Math.cos(ang)*ROLL_HIT_SPEED+sl.vx;b.vy=Math.sin(ang)*ROLL_HIT_SPEED+sl.vy;
+          spawnHit(b.x,b.y);snd.roll();
+        } else {
+          const sp=Math.hypot(b.vx,b.vy);
+          b.vx=Math.cos(ang)*sp*1.5+sl.vx*0.5;b.vy=Math.sin(ang)*sp*1.5+sl.vy*0.5;
+          const ns=Math.hypot(b.vx,b.vy);
+          if(ns>MAXSPEED){b.vx*=MAXSPEED/ns;b.vy*=MAXSPEED/ns;}
+          spawnHit(b.x,b.y);snd.hit(sp);
+        }
+      }
+    }
+  });
+}
+
+// ── Rendering ────────────────────────────────────────────────────────────────
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+
+// Pre-built gradients
+const bgGrad=(()=>{
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#06060f'); g.addColorStop(0.55,'#090920'); g.addColorStop(1,'#0d1840');
+  return g;
+})();
+const groundGrad=(()=>{
+  const g=ctx.createLinearGradient(0,H-GH,0,H);
+  g.addColorStop(0,'#1c4020'); g.addColorStop(0.4,'#122e16'); g.addColorStop(1,'#091209');
+  return g;
+})();
+const adPlaneTexts=[
+  'TRY MYSTERY GRASS',
+  'BALL INSURANCE 0% OFF',
+  'SLIME SOCKS NOW',
+  'GOALS? PROBABLY!',
+  'BUY AIR TODAY',
+  'CAPS WITH NO HEADS',
+  'TINY SHOES FOR SLIMES'
+];
+let adPlane=null, nextAdPlaneIn=260;
+function spawnAdPlane(){
+  const leftToRight=Math.random()<0.5;
+  adPlane={
+    x:leftToRight?-260:W+260,
+    y:22+Math.random()*42,
+    dir:leftToRight?1:-1,
+    speed:0.32+Math.random()*0.22,
+    text:adPlaneTexts[Math.floor(Math.random()*adPlaneTexts.length)]
+  };
+}
+function updateAdPlane(){
+  if(!airplaneAdsEnabled){ adPlane=null; return; }
+  if(adPlane){
+    adPlane.x+=adPlane.dir*adPlane.speed;
+    if((adPlane.dir>0&&adPlane.x>W+360)||(adPlane.dir<0&&adPlane.x<-360)){
+      adPlane=null; nextAdPlaneIn=420+Math.random()*720;
+    }
+  } else if(--nextAdPlaneIn<=0) spawnAdPlane();
+}
+function drawAdPlane(){
+  if(!airplaneAdsEnabled||!adPlane)return;
+  const p=adPlane, flip=p.dir<0, bannerW=Math.max(170,ctx.measureText(p.text).width+34), bannerH=27;
+  const wave=performance.now()*0.004;
+  ctx.save();
+  ctx.globalAlpha=.9;
+  ctx.translate(p.x,p.y);
+  ctx.scale(p.dir,1);
+  ctx.strokeStyle='rgba(220,235,255,.5)'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(-42,0); ctx.lineTo(-86,8+Math.sin(wave)*2); ctx.stroke();
+  ctx.fillStyle='rgba(255,245,165,.94)';
+  ctx.strokeStyle='rgba(70,35,0,.75)';
+  ctx.lineWidth=2;
+  const bx=-86-bannerW, by=8, seg=5, amp=4;
+  ctx.beginPath();
+  for(let i=0;i<=seg;i++){
+    const t=i/seg, x=bx+t*bannerW, y=by+Math.sin(wave+i*.85)*amp;
+    if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  for(let i=seg;i>=0;i--){
+    const t=i/seg, x=bx+t*bannerW, y=by+bannerH+Math.sin(wave+i*.85+1.2)*amp;
+    ctx.lineTo(x,y);
+  }
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.scale(flip?-1:1,1);
+  ctx.fillStyle='#271700'; ctx.font='700 11px Orbitron, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(p.text, flip?86+bannerW/2:-86-bannerW/2,8+bannerH/2+Math.sin(wave+2)*2);
+  ctx.scale(flip?-1:1,1);
+  ctx.fillStyle='#d8f4ff'; ctx.strokeStyle='#31475c'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.ellipse(0,0,34,10,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#ff5a7d';
+  ctx.beginPath(); ctx.moveTo(12,-3); ctx.lineTo(45,-18); ctx.lineTo(33,3); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-25,-3); ctx.lineTo(-45,-18); ctx.lineTo(-38,2); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#93e9ff'; ctx.beginPath(); ctx.arc(21,-1,4,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawNet(x0,w){
+  ctx.lineWidth=1; ctx.strokeStyle='rgba(255,255,255,0.18)';
+  for(let i=x0;i<=x0+w;i+=10){ctx.beginPath();ctx.moveTo(i,H-GH-GHEIGHT);ctx.lineTo(i,H-GH);ctx.stroke();}
+  for(let j=H-GH-GHEIGHT;j<=H-GH;j+=10){ctx.beginPath();ctx.moveTo(x0,j);ctx.lineTo(x0+w,j);ctx.stroke();}
+}
+
+function drawGoal(isLeft){
+  drawNet(isLeft?0:W-GW/2, GW/2);
+  const col=isLeft?'#00f5ff':'#ff3366';
+  const postX = isLeft ? GW/2 : W-GW/2;
+  const wallX = isLeft ? 0 : W;
+  const topY  = H-GH-GHEIGHT;
+  const roofY = topY-40; // angled roof rises 40px toward the wall
+
+  ctx.save();
+  ctx.shadowColor=col; ctx.shadowBlur=14;
+  ctx.strokeStyle=col; ctx.lineWidth=3;
+  ctx.lineJoin='round';
+  ctx.beginPath();
+  // vertical post
+  ctx.moveTo(postX, H-GH);
+  ctx.lineTo(postX, topY);
+  // angled roof bar from top of post to wall corner
+  ctx.lineTo(wallX, roofY);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawKeeperHat(sl,isRight){
+  // A little cap sitting on top of the head: a domed crown plus a brim,
+  // the goalkeeper's one visual tell since the body is the same team color.
+  const kr=SR*0.78, hatY=sl.y-kr*0.8, crownR=kr*0.6, tilt=(isRight?-1:1)*crownR*0.15;
+  ctx.save();
+  ctx.shadowColor='#FFC400'; ctx.shadowBlur=6;
+  ctx.fillStyle='#FFC400'; ctx.strokeStyle='#6b4a00'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.arc(sl.x+tilt,hatY,crownR,Math.PI,0); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.shadowBlur=0;
+  ctx.beginPath(); ctx.ellipse(sl.x+tilt,hatY,crownR*1.3,crownR*0.3,0,0,Math.PI*2);
+  ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+
+function drawSlime(sl,isRight,baseCol,glowCol,role){
+  ctx.save();
+  const isKeeper=role==='keeper';
+  const r=isKeeper?SR*0.78:SR;
+  const lightCol=isRight?'#ff5f86':'#55ffff';
+  const darkCol=isRight?'#7a1230':'#00616a';
+  if(isKeeper){ baseCol=lightCol; glowCol=lightCol; }
+  ctx.shadowColor=glowCol; ctx.shadowBlur=10;
+
+  // Body — same team color for attacker and keeper; the keeper is told apart
+  // by a hat instead (drawn after this function returns).
+  const bx=sl.x-(isRight?1:-1)*r*0.25, by=sl.y-r*0.45;
+  const grad=ctx.createRadialGradient(bx,by,0,sl.x,sl.y,r+4);
+  if(!isRight){
+    grad.addColorStop(0,'#a0ffff');
+    grad.addColorStop(0.45,baseCol);
+    grad.addColorStop(1,isKeeper?darkCol:'#003444');
+  } else {
+    grad.addColorStop(0,'#ff99bb');
+    grad.addColorStop(0.45,baseCol);
+    grad.addColorStop(1,isKeeper?darkCol:'#500018');
+  }
+  ctx.fillStyle=grad;
+  ctx.beginPath(); ctx.arc(sl.x,sl.y,r,Math.PI,0); ctx.closePath(); ctx.fill();
+
+  // Rim glow line
+  ctx.shadowBlur=0;
+  ctx.strokeStyle=glowCol+'55'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.arc(sl.x,sl.y,r,Math.PI,0); ctx.stroke();
+
+  // Shine highlight
+  ctx.fillStyle='rgba(255,255,255,0.12)';
+  ctx.beginPath(); ctx.arc(sl.x+(isRight?-1:1)*r*0.18,sl.y-r*0.52,r*0.38,Math.PI,Math.PI*1.65); ctx.closePath(); ctx.fill();
+
+  // Eye
+  const ex=sl.x+(isRight?-1:1)*r*0.3, ey=sl.y-r*0.3;
+  ctx.shadowColor=glowCol; ctx.shadowBlur=5;
+  ctx.fillStyle='rgba(255,255,255,0.95)'; ctx.beginPath(); ctx.arc(ex,ey,isKeeper?5.5:6.5,0,Math.PI*2); ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.fillStyle='#0a0a1a'; ctx.beginPath(); ctx.arc(ex+(isRight?-1:1)*2,ey,isKeeper?2.7:3.2,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.arc(ex+(isRight?-0.5:0.5),ey-1.2,1.2,0,Math.PI*2); ctx.fill();
+
+  if(isKeeper) drawKeeperHat(sl,isRight);
+  ctx.restore();
+}
+
+function render(){
+  ctx.clearRect(0,0,W,H);
+
+  // Sky
+  ctx.fillStyle=bgGrad; ctx.fillRect(0,0,W,H);
+  drawAdPlane();
+
+  // Field line - center dashed
+  ctx.strokeStyle='rgba(80,100,200,0.12)'; ctx.lineWidth=1;
+  ctx.setLineDash([5,9]);
+  ctx.beginPath(); ctx.moveTo(W/2,0); ctx.lineTo(W/2,H-GH); ctx.stroke();
+  ctx.setLineDash([]);
+  // Center arc
+  ctx.beginPath(); ctx.arc(W/2,H-GH,55,Math.PI,0); ctx.stroke();
+
+  // Grass glow strip
+  const gstrip=ctx.createLinearGradient(0,H-GH-3,0,H-GH+3);
+  gstrip.addColorStop(0,'rgba(30,180,50,0.6)'); gstrip.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=gstrip; ctx.fillRect(0,H-GH-3,W,6);
+
+  // Ground
+  ctx.fillStyle=groundGrad; ctx.fillRect(0,H-GH,W,GH);
+  // Subtle grass stripes
+  ctx.strokeStyle='rgba(0,60,0,0.25)'; ctx.lineWidth=1;
+  for(let x=0;x<W;x+=22){
+    ctx.beginPath(); ctx.moveTo(x,H-GH); ctx.lineTo(x+11,H); ctx.stroke();
+  }
+
+  // Goals
+  drawGoal(true); drawGoal(false);
+
+  // Ball trail
+  for(let i=0;i<ballTrail.length;i++){
+    const p=ballTrail[i], a=p.t*0.45;
+    ctx.fillStyle=`rgba(255,200,0,${a})`;
+    ctx.beginPath(); ctx.arc(p.x,p.y,BR*p.t*0.85,0,Math.PI*2); ctx.fill();
+  }
+
+  // Slimes
+  currentRoster().slice().sort((a,b)=>(a.role==='keeper'?0:1)-(b.role==='keeper'?0:1)).forEach(sl=>{
+    const isRight=sl.team==='right';
+    drawSlime(sl,isRight,isRight?'#DC143C':'#00CED1',isRight?'#ff3366':'#00f5ff',sl.role);
+  });
+
+  // Ball
+  ctx.save();
+  ctx.shadowColor='#ffd700'; ctx.shadowBlur=22;
+  const bg=ctx.createRadialGradient(gs.ball.x-3,gs.ball.y-4,0,gs.ball.x,gs.ball.y,BR+1);
+  bg.addColorStop(0,'#fffde0'); bg.addColorStop(0.45,'#FFD700'); bg.addColorStop(1,'#a06000');
+  ctx.fillStyle=bg;
+  ctx.beginPath(); ctx.arc(gs.ball.x,gs.ball.y,BR,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  // Particles
+  ctx.save();
+  particles.forEach(p=>{
+    ctx.globalAlpha=Math.max(0,p.life);
+    ctx.shadowColor=p.col; ctx.shadowBlur=p.type==='goal'?14:4;
+    ctx.fillStyle=p.col;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.size,0,Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha=1; ctx.shadowBlur=0;
+  ctx.restore();
+}
+
+// ── Main loop (fixed-timestep physics, uncapped rendering) ───────────────────
+const FIXED_DT=1000/60;
+let accumulator=0;
+
+function updateRollUI(){
+  // Just keeps the key-binding hint accurate (Shift for the WASD side on a
+  // shared keyboard, Space otherwise).
+  const showFor=(sectionId,side)=>{
+    const section=document.getElementById(sectionId);
+    if(section.style.display==='none') return;
+    const key=rollKeyFor(side);
+    document.getElementById(sectionId+'-boostkey').textContent=key==='shift'?'SHIFT':'SPACE';
+  };
+  showFor('ctrl-left','left');
+  showFor('ctrl-right','right');
+}
+
+function loop(now){
+  if(!gameRunning)return;
+  if(gamePaused){
+    render();
+    updatePauseUI();
+    animId=requestAnimationFrame(loop);
+    return;
+  }
+  if(!lastFrame)lastFrame=now;
+  const elapsed=Math.min(now-lastFrame,100);
+  lastFrame=now;
+  accumulator+=elapsed;
+  while(accumulator>=FIXED_DT){
+    physics();
+    accumulator-=FIXED_DT;
+  }
+  ballTrail.push({x:gs.ball.x,y:gs.ball.y,t:1});
+  if(ballTrail.length>18)ballTrail.shift();
+  ballTrail.forEach(p=>p.t=Math.max(0,p.t-0.058));
+  updateParticles();
+  updateAdPlane();
+  render();
+  updateRollUI();
+  animId=requestAnimationFrame(loop);
+}
+
+updateNameLabel(); // reflect any previously-registered name on the menu button
+loadHallOfFame();
+connectLobby();
+setInterval(refreshLoonyOnline,15000);
+</script>
+</body>
+</html>
