@@ -502,11 +502,13 @@ let airplaneAdsEnabled=loadAirplaneAds();
 let onePassToken=null;
 let loonyHandoffToken=null;
 let pendingChatDuel=null;
+let autoChatDuel=false;
 window.addEventListener('message',e=>{
   if(e.origin!=='https://loony.epizy.com')return;
   const data=e.data||{};
   if(data.type!=='loony-slime-duel-request'||!data.toUid||gameRunning)return;
   pendingChatDuel={toUid:String(data.toUid),toName:String(data.toName||'Player')};
+  autoChatDuel=true;
   document.getElementById('menu').classList.add('hidden');
   document.getElementById('online-menu').classList.remove('hidden');
   setStatus('CREATING DUEL FOR '+pendingChatDuel.toName.toUpperCase()+'...',true);
@@ -858,12 +860,17 @@ function _handleWsMsg(e){
     case 'seatUpdate':
       setStatusQuad(msg.filled+'/'+msg.total+' PLAYERS — WAITING FOR MORE...', true); break;
     case 'chooseDuration':
+      if(autoChatDuel&&!mySeat&&mySide==='left'&&gameWs&&gameWs.readyState===1){
+        gameWs.send(JSON.stringify({type:'chooseDuration',duration:60}));
+        break;
+      }
       if(mySeat){ document.getElementById('quad-online-menu').classList.add('hidden'); document.getElementById('quad-room-panel').classList.add('hidden'); }
       else      { document.getElementById('online-menu').classList.add('hidden'); document.getElementById('room-panel').classList.add('hidden'); }
       playerMode=mySeat?'quadOnline':'online'; showDurationMenu(); break;
     case 'waitingForHost':
       (mySeat?setStatusQuad:setStatus)('ALL PLAYERS CONNECTED — WAITING FOR HOST TO START...', true); break;
     case 'gameStarted':
+      autoChatDuel=false;
       document.getElementById('online-menu').classList.add('hidden');
       document.getElementById('quad-online-menu').classList.add('hidden');
       document.getElementById('duration-menu').classList.add('hidden');
@@ -947,6 +954,7 @@ function _handleWsMsg(e){
       document.getElementById('quad-room-panel').classList.remove('hidden');
       setStatusQuad('A PLAYER LEFT — '+msg.filled+'/'+msg.total+' PLAYERS', true); break;
     case 'error':
+      autoChatDuel=false;
       (mySeat?setStatusQuad:setStatus)(msg.message||'ERROR');
       if(gameWs){gameWs.onclose=null;gameWs.close();gameWs=null;} break;
   }
@@ -1284,6 +1292,7 @@ function showMainMenu(){
 }
 function backToMenu(){
   stopGame();
+  autoChatDuel=false; pendingChatDuel=null;
   if(gameWs){gameWs.onclose=null;gameWs.close();gameWs=null;} mySide=null; mySeat=null;
   onlineRollKeyDown=false; onlineRollCooldownUI=0;
   tournament=null;
@@ -2295,6 +2304,7 @@ function joinDuelFromLink(){
   const params=new URLSearchParams(location.search);
   const room=String(params.get('duel')||'').trim().toUpperCase();
   if(!room)return;
+  autoChatDuel=true;
   document.getElementById('menu').classList.add('hidden');
   document.getElementById('online-menu').classList.remove('hidden');
   document.getElementById('room-input').value=room;
