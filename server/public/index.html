@@ -501,6 +501,17 @@ function loadAirplaneAds(){ try{ return localStorage.getItem('cf_airplaneAds')!=
 let airplaneAdsEnabled=loadAirplaneAds();
 let onePassToken=null;
 let loonyHandoffToken=null;
+let pendingChatDuel=null;
+window.addEventListener('message',e=>{
+  if(e.origin!=='https://loony.epizy.com')return;
+  const data=e.data||{};
+  if(data.type!=='loony-slime-duel-request'||!data.toUid||gameRunning)return;
+  pendingChatDuel={toUid:String(data.toUid),toName:String(data.toName||'Player')};
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('online-menu').classList.remove('hidden');
+  setStatus('CREATING DUEL FOR '+pendingChatDuel.toName.toUpperCase()+'...',true);
+  hostGame();
+});
 window.addEventListener('onepass-auth',async e=>{
   const user=e.detail;
   if(!user){
@@ -702,7 +713,6 @@ function showOnlineMenu(){
   document.getElementById('menu').classList.add('hidden');
   document.getElementById('online-menu').classList.remove('hidden');
   setStatus('READY');
-  connectLobby();
 }
 function resetCopyBtn(){
   const btn=document.getElementById('copy-code-btn');
@@ -829,6 +839,19 @@ function _handleWsMsg(e){
           document.getElementById('room-panel').classList.remove('hidden');
           setStatus('WAITING FOR OPPONENT...', true);
           resetCopyBtn();
+          if(pendingChatDuel){
+            const chatFrame=document.querySelector('#loony-shared-chat-panel iframe');
+            if(chatFrame&&chatFrame.contentWindow){
+              chatFrame.contentWindow.postMessage({
+                type:'loony-slime-duel-room',
+                toUid:pendingChatDuel.toUid,
+                toName:pendingChatDuel.toName,
+                roomId:msg.roomId
+              },'https://loony.epizy.com');
+              setStatus('DUEL INVITE SENT TO '+pendingChatDuel.toName.toUpperCase()+' - WAITING...',true);
+            }
+            pendingChatDuel=null;
+          }
         }
       }
       break;
@@ -2268,9 +2291,19 @@ function loop(now){
 
 updateNameLabel(); // reflect any previously-registered name on the menu button
 loadHallOfFame();
-connectLobby();
+function joinDuelFromLink(){
+  const params=new URLSearchParams(location.search);
+  const room=String(params.get('duel')||'').trim().toUpperCase();
+  if(!room)return;
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('online-menu').classList.remove('hidden');
+  document.getElementById('room-input').value=room;
+  history.replaceState(null,'',location.pathname);
+  joinGame();
+}
+joinDuelFromLink();
 setInterval(refreshLoonyOnline,15000);
 </script>
-<script src="https://loony.epizy.com/lounge.js?v=3" defer></script>
+<script src="https://loony.epizy.com/lounge.js?v=4" data-side="left" data-game="slime" defer></script>
 </body>
 </html>
