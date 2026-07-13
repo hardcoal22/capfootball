@@ -203,6 +203,29 @@ canvas#canvas {
 .lobby-chat-line { font-size:.66rem; line-height:1.5; color:#cfe6ff; margin-bottom:5px; letter-spacing:.6px; }
 .lobby-system { color:#80c0ff; opacity:.85; }
 .challenge-btn { padding:5px 8px; font-size:.55rem; letter-spacing:1px; }
+.loony-floating-chat {
+  position:fixed; right:18px; bottom:18px; width:min(380px,calc(100vw - 24px));
+  height:min(560px,calc(100vh - 78px)); z-index:50; min-width:285px; min-height:220px;
+  border:1px solid rgba(0,245,255,0.34); border-radius:10px; overflow:hidden;
+  background:rgba(5,8,22,0.96); resize:both;
+  box-shadow:0 18px 60px rgba(0,0,0,0.52),0 0 28px rgba(0,245,255,0.14);
+}
+.loony-floating-chat.minimized { width:230px; height:42px; resize:none; }
+.loony-chat-bar {
+  height:42px; display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:0 8px 0 13px; background:linear-gradient(90deg,rgba(15,20,54,0.98),rgba(8,36,50,0.98));
+  border-bottom:1px solid rgba(0,245,255,0.2); color:#dfe8ff; font-size:.62rem;
+  letter-spacing:2px; cursor:move; user-select:none;
+}
+.loony-chat-actions { display:flex; gap:6px; }
+.loony-chat-actions button {
+  width:28px; height:26px; border:1px solid rgba(0,245,255,0.28); border-radius:6px;
+  background:rgba(255,255,255,0.06); color:#cfe6ff; font-family:inherit; cursor:pointer;
+}
+.loony-chat-actions button:hover { border-color:#00f5ff; color:#00f5ff; }
+.loony-floating-chat iframe { display:block; width:100%; height:calc(100% - 42px); border:0; background:transparent; }
+.loony-floating-chat.minimized iframe { display:none; }
+@media (max-width:700px){ .loony-floating-chat { right:10px; bottom:10px; width:calc(100vw - 20px); height:min(500px,calc(100vh - 64px)); } }
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 .pulsing { animation:pulse 1s infinite; }
 #ping-info {
@@ -258,6 +281,16 @@ canvas#canvas {
 </head>
 <body>
 <canvas id="stars-bg"></canvas>
+<section id="loony-floating-chat" class="loony-floating-chat" aria-label="Loony chat">
+  <div id="loony-chat-bar" class="loony-chat-bar">
+    <span>LOONY CHAT</span>
+    <div class="loony-chat-actions">
+      <button type="button" id="loony-chat-min" title="Minimize chat" aria-label="Minimize chat">_</button>
+      <button type="button" id="loony-chat-home" title="Open Loony chat" aria-label="Open Loony chat">↗</button>
+    </div>
+  </div>
+  <iframe title="Loony shared chat" src="https://loony.epizy.com/chat-widget.html"></iframe>
+</section>
 <a id="loony-home-btn" href="https://loony.epizy.com/">&#8592; Loony Games</a>
 
 <!-- MAIN MENU -->
@@ -1567,6 +1600,45 @@ window.addEventListener('message',e=>{
   if(data.type==='loony-auth'&&data.idToken) autoSignInFromLoonyToken(data.idToken);
 });
 consumeLoonyHashToken();
+function initFloatingLoonyChat(){
+  const panel=document.getElementById('loony-floating-chat');
+  const bar=document.getElementById('loony-chat-bar');
+  const minBtn=document.getElementById('loony-chat-min');
+  const homeBtn=document.getElementById('loony-chat-home');
+  if(!panel||!bar)return;
+  try{
+    const saved=JSON.parse(localStorage.getItem('loonyFloatingChat')||'null');
+    if(saved&&Number.isFinite(saved.left)&&Number.isFinite(saved.top)){
+      panel.style.left=Math.max(6,Math.min(saved.left,window.innerWidth-80))+'px';
+      panel.style.top=Math.max(6,Math.min(saved.top,window.innerHeight-42))+'px';
+      panel.style.right='auto'; panel.style.bottom='auto';
+    }
+    if(saved&&saved.minimized)panel.classList.add('minimized');
+  }catch(e){}
+  let drag=null;
+  bar.addEventListener('pointerdown',e=>{
+    if(e.target&&e.target.closest&&e.target.closest('button'))return;
+    const r=panel.getBoundingClientRect();
+    drag={dx:e.clientX-r.left,dy:e.clientY-r.top};
+    bar.setPointerCapture(e.pointerId);
+  });
+  bar.addEventListener('pointermove',e=>{
+    if(!drag)return;
+    const left=Math.max(6,Math.min(e.clientX-drag.dx,window.innerWidth-panel.offsetWidth-6));
+    const top=Math.max(6,Math.min(e.clientY-drag.dy,window.innerHeight-panel.offsetHeight-6));
+    panel.style.left=left+'px'; panel.style.top=top+'px'; panel.style.right='auto'; panel.style.bottom='auto';
+  });
+  function saveChatPos(){
+    const r=panel.getBoundingClientRect();
+    try{localStorage.setItem('loonyFloatingChat',JSON.stringify({left:r.left,top:r.top,minimized:panel.classList.contains('minimized')}));}catch(e){}
+  }
+  bar.addEventListener('pointerup',()=>{drag=null;saveChatPos();});
+  bar.addEventListener('pointercancel',()=>{drag=null;saveChatPos();});
+  if(minBtn)minBtn.addEventListener('click',()=>{panel.classList.toggle('minimized');minBtn.textContent=panel.classList.contains('minimized')?'+':'_';saveChatPos();});
+  if(homeBtn)homeBtn.addEventListener('click',()=>window.open('https://loony.epizy.com/chat-widget.html','_blank','noopener'));
+  if(minBtn&&panel.classList.contains('minimized'))minBtn.textContent='+';
+}
+initFloatingLoonyChat();
 
 function loadHallOfFame(){
   const body=document.getElementById('hof-body');
@@ -2330,6 +2402,6 @@ loadHallOfFame();
 connectLobby();
 setInterval(refreshLoonyOnline,15000);
 </script>
-<script src="https://loony.epizy.com/shared-chat-embed.js?v=1" defer></script>
+<script src="https://loony.epizy.com/lounge.js?v=2" defer></script>
 </body>
 </html>
