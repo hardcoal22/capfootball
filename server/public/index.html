@@ -512,7 +512,7 @@ window.addEventListener('message',e=>{
   document.getElementById('menu').classList.add('hidden');
   document.getElementById('online-menu').classList.remove('hidden');
   setStatus('CREATING DUEL FOR '+pendingChatDuel.toName.toUpperCase()+'...',true);
-  hostGame();
+  hostGame(true);
 });
 window.addEventListener('onepass-auth',async e=>{
   const user=e.detail;
@@ -980,10 +980,10 @@ function _openWs(onopen){
   gameWs=ws;
 }
 
-function hostGame(){
+function hostGame(autoStart=false){
   mySeat=null;
   setStatus('CONNECTING TO SERVER...', true);
-  _openWs(()=>gameWs.send(JSON.stringify({type:'create'})));
+  _openWs(()=>gameWs.send(JSON.stringify({type:'create',autoStart:!!autoStart})));
 }
 
 function joinGame(){

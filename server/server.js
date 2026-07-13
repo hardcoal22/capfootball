@@ -464,6 +464,7 @@ function createRoom(hostWs, mode) {
     guest: null,
     seats: mode === "quad" ? { LA: hostWs, LK: null, RA: null, RK: null } : null,
     phase: "lobby", // lobby | playing | ended
+    autoStart: false,
     duration: 60,
     timeLeft: 0,
     score: { left: 0, right: 0 },
@@ -866,6 +867,7 @@ function handleMessage(ws, msg) {
       if (room) leaveRoom(ws); // a socket can only be in one room
       const mode = msg.mode === "quad" ? "quad" : "duo";
       const r = createRoom(ws, mode);
+      r.autoStart = mode === "duo" && !!msg.autoStart;
       ws.room = r;
       if (mode === "quad") {
         ws.seat = "LA";
@@ -906,8 +908,12 @@ function handleMessage(ws, msg) {
       r.guest = ws; ws.room = r; ws.side = "right";
       r.lastActivity = Date.now();
       send(ws, { type: "assigned", mode: "duo", side: "right", roomId: r.id });
-      send(ws, { type: "waitingForHost" });
-      send(r.host, { type: "chooseDuration" });
+      if (r.autoStart) {
+        startGame(r, 60);
+      } else {
+        send(ws, { type: "waitingForHost" });
+        send(r.host, { type: "chooseDuration" });
+      }
       updateLobbyRoster();
       break;
     }
