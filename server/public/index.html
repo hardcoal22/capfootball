@@ -172,9 +172,12 @@ canvas#canvas {
   border-radius:8px;
 }
 #lobby-body {
-  display:grid; grid-template-columns:minmax(320px,1fr) 270px; gap:10px;
+  display:grid; grid-template-columns:minmax(270px,1fr); gap:10px;
   width:100%; min-height:180px;
+  max-width:520px;
 }
+#lobby-panel .lobby-col:first-child,
+#lobby-panel > .input-row { display:none; }
 .lobby-col { display:flex; flex-direction:column; gap:6px; min-width:0; }
 .lobby-col-title { color:#7fb0ff; font-size:.58rem; letter-spacing:2px; opacity:.8; text-align:left; }
 #lobby-players,#lobby-chat {
@@ -280,7 +283,7 @@ canvas#canvas {
     </aside>
   </div>
   <div id="lobby-panel">
-    <div class="subtitle">CHAT ROOM - CHALLENGE PLAYERS</div>
+    <div class="subtitle">ONLINE PLAYERS - CHALLENGE</div>
     <div id="lobby-body">
       <div class="lobby-col">
         <div class="lobby-col-title">CHAT</div>
@@ -2327,5 +2330,6 @@ loadHallOfFame();
 connectLobby();
 setInterval(refreshLoonyOnline,15000);
 </script>
+<script src="https://loony.epizy.com/shared-chat-embed.js?v=1" defer></script>
 </body>
 </html>
