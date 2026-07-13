@@ -163,46 +163,6 @@ canvas#canvas {
 #online-status {
   font-size:0.7rem; letter-spacing:3px; min-height:1.4em; color:#80c0ff;
 }
-#lobby-panel {
-  display:flex; flex-direction:column; align-items:center; gap:10px;
-  width:min(900px,94vw);
-  padding:12px;
-  background:rgba(0,0,0,0.28);
-  border:1px solid rgba(0,245,255,0.22);
-  border-radius:8px;
-}
-#lobby-body {
-  display:grid; grid-template-columns:minmax(270px,1fr); gap:10px;
-  width:100%; min-height:180px;
-  max-width:520px;
-}
-#lobby-panel .lobby-col:first-child,
-#lobby-panel > .input-row { display:none; }
-.lobby-col { display:flex; flex-direction:column; gap:6px; min-width:0; }
-.lobby-col-title { color:#7fb0ff; font-size:.58rem; letter-spacing:2px; opacity:.8; text-align:left; }
-#lobby-players,#lobby-chat {
-  background:rgba(0,0,0,0.32);
-  border:1px solid rgba(255,255,255,0.1);
-  border-radius:6px;
-  padding:8px;
-  overflow:auto;
-  max-height:210px;
-}
-#lobby-chat { min-height:210px; }
-#lobby-players { min-height:210px; }
-@media (max-width:760px){
-  #lobby-body { grid-template-columns:1fr; }
-}
-.lobby-player {
-  display:grid; grid-template-columns:1fr auto; gap:6px; align-items:center;
-  padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06);
-  font-size:.64rem; letter-spacing:1px;
-}
-.lobby-player-name { color:#cfe6ff; }
-.lobby-ping { color:#7fe0a0; font-size:.58rem; opacity:.9; }
-.lobby-chat-line { font-size:.66rem; line-height:1.5; color:#cfe6ff; margin-bottom:5px; letter-spacing:.6px; }
-.lobby-system { color:#80c0ff; opacity:.85; }
-.challenge-btn { padding:5px 8px; font-size:.55rem; letter-spacing:1px; }
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 .pulsing { animation:pulse 1s infinite; }
 #ping-info {
@@ -281,23 +241,6 @@ canvas#canvas {
       <h2>HALL OF FAME</h2>
       <div id="hof-body"></div>
     </aside>
-  </div>
-  <div id="lobby-panel">
-    <div class="subtitle">ONLINE PLAYERS - CHALLENGE</div>
-    <div id="lobby-body">
-      <div class="lobby-col">
-        <div class="lobby-col-title">CHAT</div>
-        <div id="lobby-chat"></div>
-      </div>
-      <div class="lobby-col">
-        <div class="lobby-col-title">ONLINE USERS</div>
-        <div id="lobby-players"></div>
-      </div>
-    </div>
-    <div class="input-row" style="width:min(720px,90vw)">
-      <input id="lobby-input" maxlength="180" placeholder="chat message" style="flex:1;letter-spacing:1px;font-size:.8rem;text-align:left">
-      <button class="btn btn-sm" onclick="sendLobbyChat()">Send</button>
-    </div>
   </div>
 </div>
 
@@ -680,7 +623,6 @@ document.addEventListener('keydown',e=>{
 });
 document.addEventListener('keyup',e=>{ if(isTypingTarget(e))return; e.preventDefault(); keys[e.key.toLowerCase()]=false; });
 document.getElementById('room-input').addEventListener('keydown',e=>{ if(e.key==='Enter') joinGame(); });
-document.getElementById('lobby-input').addEventListener('keydown',e=>{ if(e.key==='Enter') sendLobbyChat(); });
 
 // ── Online (native WebSocket) ─────────────────────────────────────────────────
 function setStatus(txt,pulse=false){
