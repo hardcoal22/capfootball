@@ -465,6 +465,8 @@ function createRoom(hostWs, mode) {
     seats: mode === "quad" ? { LA: hostWs, LK: null, RA: null, RK: null } : null,
     phase: "lobby", // lobby | playing | ended
     autoStart: false,
+    testBot: false,
+    testBotHoldTicks: 0,
     duration: 60,
     timeLeft: 0,
     score: { left: 0, right: 0 },
@@ -476,6 +478,24 @@ function createRoom(hostWs, mode) {
   };
   rooms.set(room.id, room);
   return room;
+}
+
+function attachTestBot(room) {
+  const bot = {
+    readyState: WebSocket.OPEN,
+    send() {},
+    close() { this.readyState = WebSocket.CLOSED; },
+    playerName: null,
+    lobbyName: "Test Player",
+    clientId: 0,
+    room,
+    side: "right",
+    isTestBot: true
+  };
+  room.guest = bot;
+  room.testBot = true;
+  room.autoStart = true;
+  return bot;
 }
 
 function stopTimers(room) {
@@ -533,8 +553,26 @@ function recordGameResult(room) {
 }
 
 // ── Physics (duo): direct port of the client's local-mode physics() ─────────
+function updateTestBotInput(room) {
+  if (!room.testBot) return;
+  const slime = room.gs.R, ball = room.gs.ball, input = room.inputs.right;
+  const dx = ball.x - slime.x;
+  const dy = ball.y - slime.y;
+  input.left = dx < -18;
+  input.right = dx > 18;
+  input.up = slime.y >= H - GH - 1 && Math.abs(dx) < 175 && dy < -38;
+  if (ball.owner === "right") {
+    room.testBotHoldTicks++;
+    input.down = room.testBotHoldTicks < 48;
+  } else {
+    room.testBotHoldTicks = 0;
+    input.down = Math.abs(dx) < SR + BR + 18 && Math.abs(dy) < SR + BR + 24;
+  }
+}
+
 function tickDuo(room) {
   const gs = room.gs, b = gs.ball;
+  updateTestBotInput(room);
   const inL = room.inputs.left, inR = room.inputs.right;
   const events = [];
   const goal = (scorer) => {
@@ -875,6 +913,10 @@ function handleMessage(ws, msg) {
       } else {
         ws.side = "left";
         send(ws, { type: "assigned", mode: "duo", side: "left", roomId: r.id });
+        if (msg.testBot) {
+          attachTestBot(r);
+          startGame(r, 60);
+        }
       }
       updateLobbyRoster();
       break;

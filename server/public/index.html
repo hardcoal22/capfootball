@@ -507,12 +507,16 @@ window.addEventListener('message',e=>{
   if(e.origin!=='https://loony.epizy.com')return;
   const data=e.data||{};
   if(data.type!=='loony-slime-duel-request'||!data.toUid||gameRunning)return;
-  pendingChatDuel={toUid:String(data.toUid),toName:String(data.toName||'Player')};
+  pendingChatDuel={
+    toUid:String(data.toUid),
+    toName:String(data.toName||'Player'),
+    testBot:String(data.toUid)==='loony-test-bot'
+  };
   autoChatDuel=true;
   document.getElementById('menu').classList.add('hidden');
   document.getElementById('online-menu').classList.remove('hidden');
   setStatus('CREATING DUEL FOR '+pendingChatDuel.toName.toUpperCase()+'...',true);
-  hostGame(true);
+  hostGame(true,pendingChatDuel.testBot);
 });
 window.addEventListener('onepass-auth',async e=>{
   const user=e.detail;
@@ -843,7 +847,9 @@ function _handleWsMsg(e){
           resetCopyBtn();
           if(pendingChatDuel){
             const chatFrame=document.querySelector('#loony-shared-chat-panel iframe');
-            if(chatFrame&&chatFrame.contentWindow){
+            if(pendingChatDuel.testBot){
+              setStatus('TEST PLAYER CONNECTED - STARTING MATCH...',true);
+            } else if(chatFrame&&chatFrame.contentWindow){
               chatFrame.contentWindow.postMessage({
                 type:'loony-slime-duel-room',
                 toUid:pendingChatDuel.toUid,
@@ -980,10 +986,10 @@ function _openWs(onopen){
   gameWs=ws;
 }
 
-function hostGame(autoStart=false){
+function hostGame(autoStart=false,testBot=false){
   mySeat=null;
   setStatus('CONNECTING TO SERVER...', true);
-  _openWs(()=>gameWs.send(JSON.stringify({type:'create',autoStart:!!autoStart})));
+  _openWs(()=>gameWs.send(JSON.stringify({type:'create',autoStart:!!autoStart,testBot:!!testBot})));
 }
 
 function joinGame(){
@@ -2314,6 +2320,6 @@ function joinDuelFromLink(){
 joinDuelFromLink();
 setInterval(refreshLoonyOnline,15000);
 </script>
-<script src="https://loony.epizy.com/lounge.js?v=4" data-side="left" data-game="slime" defer></script>
+<script src="https://loony.epizy.com/lounge.js?v=5" data-side="left" data-game="slime" defer></script>
 </body>
 </html>
