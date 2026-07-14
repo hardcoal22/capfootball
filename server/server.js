@@ -17,6 +17,7 @@ const http = require("http");
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const WebSocket = require("ws");
 
 // ── Player records / hall of fame (nickname-based, no passwords) ─────────────
@@ -47,11 +48,14 @@ const LOONY_CHAT_DATABASE_URL = String(
   "https://topsnooker-2f4cf-default-rtdb.europe-west1.firebasedatabase.app"
 ).replace(/\/+$/, "");
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
+const DEEPSEEK_CONFIG_COLLECTION = process.env.DEEPSEEK_CONFIG_COLLECTION || "serverConfig";
+const DEEPSEEK_CONFIG_DOC = "loonyBotDeepSeek";
+let deepSeekApiKey = String(process.env.DEEPSEEK_API_KEY || "").trim();
 const LOONY_BOT_POLL_MS = Math.max(1500, Number(process.env.LOONY_BOT_POLL_MS || 2500));
 const LOONY_BOT_HEARTBEAT_MS = Math.max(15000, Number(process.env.LOONY_BOT_HEARTBEAT_MS || 25000));
 const loonyBotState = {
   running: false,
-  aiConfigured: Boolean(process.env.DEEPSEEK_API_KEY),
+  aiConfigured: Boolean(deepSeekApiKey),
   lastMessageKey: null,
   lastReplyAt: null,
   lastError: null
@@ -164,6 +168,63 @@ function loadServiceAccountFromEnv() {
   return null;
 }
 
+function deepSeekEncryptionKey() {
+  const material = String(process.env.LOONY_CONFIG_SECRET || process.env.FIREBASE_SERVICE_ACCOUNT || "");
+  if (!material) throw new Error("Server secret storage is not configured");
+  return crypto.createHash("sha256").update(material).digest();
+}
+
+function encryptServerSecret(value) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", deepSeekEncryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(String(value), "utf8"), cipher.final()]);
+  return {
+    encrypted: encrypted.toString("base64"),
+    iv: iv.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64")
+  };
+}
+
+function decryptServerSecret(saved) {
+  const decipher = crypto.createDecipheriv("aes-256-gcm", deepSeekEncryptionKey(), Buffer.from(saved.iv, "base64"));
+  decipher.setAuthTag(Buffer.from(saved.tag, "base64"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(saved.encrypted, "base64")),
+    decipher.final()
+  ]).toString("utf8");
+}
+
+async function loadDeepSeekConfig() {
+  if (!firestore) return;
+  try {
+    const snap = await firestore.collection(DEEPSEEK_CONFIG_COLLECTION).doc(DEEPSEEK_CONFIG_DOC).get();
+    if (!snap.exists) return;
+    const saved = snap.data() || {};
+    if (saved.encrypted && saved.iv && saved.tag) {
+      deepSeekApiKey = decryptServerSecret(saved).trim();
+      loonyBotState.aiConfigured = Boolean(deepSeekApiKey);
+      console.log("Loony Bot: loaded encrypted DeepSeek key from Firestore");
+    }
+  } catch (error) {
+    console.error("Loony Bot DeepSeek config load:", error.message);
+  }
+}
+
+async function saveDeepSeekConfig(apiKey, decodedUser) {
+  if (!firestore) throw new Error("Server secret storage is unavailable");
+  const sealed = encryptServerSecret(apiKey);
+  await firestore.collection(DEEPSEEK_CONFIG_COLLECTION).doc(DEEPSEEK_CONFIG_DOC).set({
+    ...sealed,
+    model: DEEPSEEK_MODEL,
+    updatedAt: new Date().toISOString(),
+    updatedBy: decodedUser.uid,
+    updatedByEmail: decodedUser.email || ""
+  });
+  deepSeekApiKey = apiKey;
+  loonyBotState.aiConfigured = true;
+  loonyBotState.lastError = null;
+}
+
 // Load whichever backend is configured, populating the cache. Returns a promise.
 function initRecordStore() {
   const hasFirebaseConfig = Boolean(process.env.FIREBASE_SERVICE_ACCOUNT || process.env.GOOGLE_APPLICATION_CREDENTIALS);
@@ -181,10 +242,11 @@ function initRecordStore() {
       firestore = admin.firestore();
       firebaseAuth = admin.auth();
       usingOnePassUsers = true;
-      return firestore.collection(ONEPASS_USERS_COLLECTION).get().then(snap => {
+      return firestore.collection(ONEPASS_USERS_COLLECTION).get().then(async snap => {
         snap.forEach(doc => rememberRecordAliases(doc.id, doc.data() || {}));
         loonyOnlinePlayers = playersFromPresenceSnapshot(snap);
         startLoonyPresenceWatch();
+        await loadDeepSeekConfig();
         console.log("Records: Firebase " + EXPECTED_FIREBASE_PROJECT_ID + "/" + ONEPASS_USERS_COLLECTION + " (" + snap.size + " loaded)");
       }).catch(e => {
         console.error("Firestore initial load failed:", e.message);
@@ -227,6 +289,13 @@ async function verifiedOnePassUser(idToken) {
   const record = records[decoded.uid.toLowerCase()] || findPlayerRecord(decoded.uid);
   if (record) record.userId = decoded.uid;
   return record;
+}
+
+async function verifiedConfigUser(req) {
+  if (!firebaseAuth) throw new Error("Loony Firebase Admin authentication is not configured");
+  const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  if (!token) throw new Error("Sign in to Loony before changing the bot key");
+  return firebaseAuth.verifyIdToken(token);
 }
 
 function setLoonyPresence(ws, patch) {
@@ -289,7 +358,7 @@ async function publishLoonyBotPresence() {
       name: LOONY_BOT_NAME,
       uid: LOONY_BOT_UID,
       bot: true,
-      aiReady: Boolean(process.env.DEEPSEEK_API_KEY),
+      aiReady: Boolean(deepSeekApiKey),
       games: ["slime", "mathtrack", "topsnooker"],
       ts: Date.now()
     }
@@ -312,7 +381,7 @@ function rememberLoonyChatMessage(message) {
 }
 
 async function askDeepSeekForLoonyReply() {
-  const apiKey = String(process.env.DEEPSEEK_API_KEY || "").trim();
+  const apiKey = String(deepSeekApiKey || "").trim();
   if (!apiKey) {
     return "I’m online and ready to play, but my DeepSeek API key still needs to be connected on the server.";
   }
@@ -354,6 +423,31 @@ async function askDeepSeekForLoonyReply() {
   const reply = String(content || "").replace(/\s+/g, " ").trim().slice(0, 300);
   if (!reply) throw new Error("DeepSeek returned an empty reply");
   return reply;
+}
+
+async function testDeepSeekConnection(apiKey) {
+  const response = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": "Bearer " + apiKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: DEEPSEEK_MODEL,
+      messages: [{ role: "user", content: "Reply with exactly: Loony Bot connected" }],
+      thinking: { type: "disabled" },
+      max_tokens: 20,
+      temperature: 0,
+      stream: false
+    }),
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).replace(/\s+/g, " ").slice(0, 180);
+    throw new Error("DeepSeek returned " + response.status + (detail ? ": " + detail : ""));
+  }
+  const data = await response.json();
+  return String(data?.choices?.[0]?.message?.content || "Connected").replace(/\s+/g, " ").trim().slice(0, 120);
 }
 
 async function postLoonyBotMessage(text) {
@@ -409,7 +503,7 @@ async function pollLoonyChatForBot() {
 function startLoonyBot() {
   if (!LOONY_BOT_ENABLED || loonyBotState.running) return;
   loonyBotState.running = true;
-  loonyBotState.aiConfigured = Boolean(process.env.DEEPSEEK_API_KEY);
+  loonyBotState.aiConfigured = Boolean(deepSeekApiKey);
   const heartbeat = () => publishLoonyBotPresence().catch(error => {
     loonyBotState.lastError = String(error.message || error).slice(0, 220);
     console.error("Loony Bot presence:", loonyBotState.lastError);
@@ -1253,12 +1347,40 @@ app.get("/api/loony-bot/status", (req, res) => {
     online: loonyBotState.running,
     name: LOONY_BOT_NAME,
     uid: LOONY_BOT_UID,
-    aiConfigured: Boolean(process.env.DEEPSEEK_API_KEY),
+    aiConfigured: Boolean(deepSeekApiKey),
     model: DEEPSEEK_MODEL,
     games: ["slime", "mathtrack", "topsnooker"],
     lastReplyAt: loonyBotState.lastReplyAt,
     lastError: loonyBotState.lastError
   });
+});
+app.post("/api/loony-bot/deepseek-key", async (req, res) => {
+  try {
+    const decoded = await verifiedConfigUser(req);
+    const apiKey = String(req.body && req.body.apiKey || "").trim();
+    if (apiKey.length < 20 || apiKey.length > 500) {
+      return res.status(400).json({ ok: false, error: "Enter a valid DeepSeek API key" });
+    }
+    await saveDeepSeekConfig(apiKey, decoded);
+    publishLoonyBotPresence().catch(() => {});
+    res.json({ ok: true, configured: true, model: DEEPSEEK_MODEL });
+  } catch (error) {
+    const authError = /token|sign in|authentication/i.test(error.message || "");
+    res.status(authError ? 401 : 503).json({ ok: false, error: String(error.message || error).slice(0, 220) });
+  }
+});
+app.post("/api/loony-bot/deepseek-test", async (req, res) => {
+  try {
+    await verifiedConfigUser(req);
+    const typedKey = String(req.body && req.body.apiKey || "").trim();
+    const apiKey = typedKey || deepSeekApiKey;
+    if (!apiKey) return res.status(400).json({ ok: false, error: "Save or enter a DeepSeek API key first" });
+    const reply = await testDeepSeekConnection(apiKey);
+    res.json({ ok: true, model: DEEPSEEK_MODEL, reply });
+  } catch (error) {
+    const authError = /token|sign in|authentication/i.test(error.message || "");
+    res.status(authError ? 401 : 502).json({ ok: false, error: String(error.message || error).slice(0, 220) });
+  }
 });
 app.post("/api/register", async (req, res) => {
   try {
