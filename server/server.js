@@ -414,7 +414,7 @@ async function publishLoonyBotPresence() {
 
 function loonyBotWasAddressed(message) {
   const text = String(message && message.text || "").trim();
-  return /(^|\s)@?loony\s*bot\b|@loonybot\b|(^|\s)bot(?:\s|[,:!?]|$)/i.test(text);
+  return /(^|\s)@?loony(?:\s*bot)?\b|@loonybot\b|(^|\s)bot(?:\s|[,:!?]|$)/i.test(text);
 }
 
 function rememberLoonyChatMessage(message) {
