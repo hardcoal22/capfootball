@@ -1,1 +1,3 @@
 node_modules/
+.loony-deepseek-config.json
+.loony-config-secret

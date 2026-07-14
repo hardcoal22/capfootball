@@ -50,8 +50,12 @@ const LOONY_CHAT_DATABASE_URL = String(
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
 const DEEPSEEK_CONFIG_COLLECTION = process.env.DEEPSEEK_CONFIG_COLLECTION || "serverConfig";
 const DEEPSEEK_CONFIG_DOC = "loonyBotDeepSeek";
+const DEEPSEEK_LOCAL_CONFIG_FILE = path.join(__dirname, ".loony-deepseek-config.json");
+const DEEPSEEK_LOCAL_SECRET_FILE = path.join(__dirname, ".loony-config-secret");
+const LOONY_FIREBASE_WEB_API_KEY = process.env.LOONY_FIREBASE_WEB_API_KEY || "AIzaSyCZlRFRVjPRsPH5Q1oxaTpsSC1yXzKLI7M";
 const LOONY_ADMIN_UIDS = String(process.env.LOONY_ADMIN_UIDS || "jUMonaXXnyX9E4Jei7NbPXJL8jC2").split(",").map(value => value.trim()).filter(Boolean);
 let deepSeekApiKey = String(process.env.DEEPSEEK_API_KEY || "").trim();
+let deepSeekStorage = deepSeekApiKey ? "environment" : "none";
 const LOONY_BOT_POLL_MS = Math.max(1500, Number(process.env.LOONY_BOT_POLL_MS || 2500));
 const LOONY_BOT_HEARTBEAT_MS = Math.max(15000, Number(process.env.LOONY_BOT_HEARTBEAT_MS || 25000));
 const loonyBotState = {
@@ -170,8 +174,14 @@ function loadServiceAccountFromEnv() {
 }
 
 function deepSeekEncryptionKey() {
-  const material = String(process.env.LOONY_CONFIG_SECRET || process.env.FIREBASE_SERVICE_ACCOUNT || "");
-  if (!material) throw new Error("Server secret storage is not configured");
+  let material = String(process.env.LOONY_CONFIG_SECRET || process.env.FIREBASE_SERVICE_ACCOUNT || "");
+  if (!material) {
+    try { material = fs.readFileSync(DEEPSEEK_LOCAL_SECRET_FILE, "utf8").trim(); } catch {}
+    if (!material) {
+      material = crypto.randomBytes(48).toString("base64");
+      fs.writeFileSync(DEEPSEEK_LOCAL_SECRET_FILE, material, { mode: 0o600 });
+    }
+  }
   return crypto.createHash("sha256").update(material).digest();
 }
 
@@ -196,31 +206,50 @@ function decryptServerSecret(saved) {
 }
 
 async function loadDeepSeekConfig() {
-  if (!firestore) return;
-  try {
-    const snap = await firestore.collection(DEEPSEEK_CONFIG_COLLECTION).doc(DEEPSEEK_CONFIG_DOC).get();
-    if (!snap.exists) return;
-    const saved = snap.data() || {};
-    if (saved.encrypted && saved.iv && saved.tag) {
-      deepSeekApiKey = decryptServerSecret(saved).trim();
-      loonyBotState.aiConfigured = Boolean(deepSeekApiKey);
-      console.log("Loony Bot: loaded encrypted DeepSeek key from Firestore");
+  if (firestore) {
+    try {
+      const snap = await firestore.collection(DEEPSEEK_CONFIG_COLLECTION).doc(DEEPSEEK_CONFIG_DOC).get();
+      if (snap.exists) {
+        const saved = snap.data() || {};
+        if (saved.encrypted && saved.iv && saved.tag) {
+          deepSeekApiKey = decryptServerSecret(saved).trim();
+          deepSeekStorage = "firestore";
+          loonyBotState.aiConfigured = Boolean(deepSeekApiKey);
+          console.log("Loony Bot: loaded encrypted DeepSeek key from Firestore");
+          return;
+        }
+      }
+    } catch (error) {
+      console.error("Loony Bot DeepSeek config load:", error.message);
     }
+  }
+  try {
+    const saved = JSON.parse(fs.readFileSync(DEEPSEEK_LOCAL_CONFIG_FILE, "utf8"));
+    deepSeekApiKey = decryptServerSecret(saved).trim();
+    deepSeekStorage = "server-file";
+    loonyBotState.aiConfigured = Boolean(deepSeekApiKey);
+    console.log("Loony Bot: loaded encrypted DeepSeek key from server storage");
   } catch (error) {
-    console.error("Loony Bot DeepSeek config load:", error.message);
+    if (error.code !== "ENOENT") console.error("Loony Bot local DeepSeek config load:", error.message);
   }
 }
 
 async function saveDeepSeekConfig(apiKey, decodedUser) {
-  if (!firestore) throw new Error("Server secret storage is unavailable");
   const sealed = encryptServerSecret(apiKey);
-  await firestore.collection(DEEPSEEK_CONFIG_COLLECTION).doc(DEEPSEEK_CONFIG_DOC).set({
+  const saved = {
     ...sealed,
     model: DEEPSEEK_MODEL,
     updatedAt: new Date().toISOString(),
     updatedBy: decodedUser.uid,
     updatedByEmail: decodedUser.email || ""
-  });
+  };
+  if (firestore) {
+    await firestore.collection(DEEPSEEK_CONFIG_COLLECTION).doc(DEEPSEEK_CONFIG_DOC).set(saved);
+    deepSeekStorage = "firestore";
+  } else {
+    fs.writeFileSync(DEEPSEEK_LOCAL_CONFIG_FILE, JSON.stringify(saved), { mode: 0o600 });
+    deepSeekStorage = "server-file";
+  }
   deepSeekApiKey = apiKey;
   loonyBotState.aiConfigured = true;
   loonyBotState.lastError = null;
@@ -262,7 +291,7 @@ function initRecordStore() {
     usingOnePassUsers = true;
     records = {};
     if (!hasFirebaseConfig) console.error("Records: Firebase Admin is not configured; Hall of Fame will not use local fallback.");
-    return Promise.resolve();
+    return loadDeepSeekConfig();
   }
   try { records = JSON.parse(fs.readFileSync(RECORDS_FILE, "utf8")); } catch { records = {}; }
   console.log("Records: local file backend (" + Object.keys(records).length + " loaded)");
@@ -293,10 +322,23 @@ async function verifiedOnePassUser(idToken) {
 }
 
 async function verifiedConfigUser(req) {
-  if (!firebaseAuth) throw new Error("Loony Firebase Admin authentication is not configured");
   const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
   if (!token) throw new Error("Sign in to Loony before changing the bot key");
-  const decoded = await firebaseAuth.verifyIdToken(token);
+  let decoded;
+  if (firebaseAuth) {
+    decoded = await firebaseAuth.verifyIdToken(token);
+  } else {
+    const response = await fetch("https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=" + encodeURIComponent(LOONY_FIREBASE_WEB_API_KEY), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: token }),
+      signal: AbortSignal.timeout(15000)
+    });
+    const data = await response.json();
+    const user = data && data.users && data.users[0];
+    if (!response.ok || !user) throw new Error("Loony sign-in token could not be verified");
+    decoded = { uid: user.localId, email: user.email || "", admin: false };
+  }
   if (!LOONY_ADMIN_UIDS.includes(decoded.uid) && decoded.admin !== true) {
     throw new Error("This Loony account is not an admin");
   }
@@ -1354,6 +1396,7 @@ app.get("/api/loony-bot/status", (req, res) => {
     uid: LOONY_BOT_UID,
     aiConfigured: Boolean(deepSeekApiKey),
     model: DEEPSEEK_MODEL,
+    storage: deepSeekStorage,
     games: ["slime", "mathtrack", "topsnooker"],
     lastReplyAt: loonyBotState.lastReplyAt,
     lastError: loonyBotState.lastError
@@ -1368,7 +1411,7 @@ app.post("/api/loony-bot/deepseek-key", async (req, res) => {
     }
     await saveDeepSeekConfig(apiKey, decoded);
     publishLoonyBotPresence().catch(() => {});
-    res.json({ ok: true, configured: true, model: DEEPSEEK_MODEL });
+    res.json({ ok: true, configured: true, model: DEEPSEEK_MODEL, storage: deepSeekStorage });
   } catch (error) {
     const authError = /token|sign in|authentication/i.test(error.message || "");
     const forbidden = /not an admin/i.test(error.message || "");
