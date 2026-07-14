@@ -50,6 +50,7 @@ const LOONY_CHAT_DATABASE_URL = String(
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
 const DEEPSEEK_CONFIG_COLLECTION = process.env.DEEPSEEK_CONFIG_COLLECTION || "serverConfig";
 const DEEPSEEK_CONFIG_DOC = "loonyBotDeepSeek";
+const DEEPSEEK_RTDB_PATH = "serverConfig/loonyBotDeepSeek";
 const DEEPSEEK_LOCAL_CONFIG_FILE = path.join(__dirname, ".loony-deepseek-config.json");
 const DEEPSEEK_LOCAL_SECRET_FILE = path.join(__dirname, ".loony-config-secret");
 const LOONY_FIREBASE_WEB_API_KEY = process.env.LOONY_FIREBASE_WEB_API_KEY || "AIzaSyCZlRFRVjPRsPH5Q1oxaTpsSC1yXzKLI7M";
@@ -174,7 +175,7 @@ function loadServiceAccountFromEnv() {
 }
 
 function deepSeekEncryptionKey() {
-  let material = String(process.env.LOONY_CONFIG_SECRET || process.env.FIREBASE_SERVICE_ACCOUNT || "");
+  let material = String(process.env.LOONY_CONFIG_SECRET || process.env.FIREBASE_SERVICE_ACCOUNT || "loony-rtdb-config-v1-8e4b2f6c1d9a7f3e5c0b4a6d2f8e1c7a");
   if (!material) {
     try { material = fs.readFileSync(DEEPSEEK_LOCAL_SECRET_FILE, "utf8").trim(); } catch {}
     if (!material) {
@@ -224,6 +225,18 @@ async function loadDeepSeekConfig() {
     }
   }
   try {
+    const saved = await loonyChatRest(DEEPSEEK_RTDB_PATH);
+    if (saved && saved.encrypted && saved.iv && saved.tag) {
+      deepSeekApiKey = decryptServerSecret(saved).trim();
+      deepSeekStorage = "firebase-realtime";
+      loonyBotState.aiConfigured = Boolean(deepSeekApiKey);
+      console.log("Loony Bot: loaded encrypted DeepSeek key from Firebase Realtime Database");
+      return;
+    }
+  } catch (error) {
+    console.error("Loony Bot Firebase DeepSeek config load:", error.message);
+  }
+  try {
     const saved = JSON.parse(fs.readFileSync(DEEPSEEK_LOCAL_CONFIG_FILE, "utf8"));
     deepSeekApiKey = decryptServerSecret(saved).trim();
     deepSeekStorage = "server-file";
@@ -247,8 +260,8 @@ async function saveDeepSeekConfig(apiKey, decodedUser) {
     await firestore.collection(DEEPSEEK_CONFIG_COLLECTION).doc(DEEPSEEK_CONFIG_DOC).set(saved);
     deepSeekStorage = "firestore";
   } else {
-    fs.writeFileSync(DEEPSEEK_LOCAL_CONFIG_FILE, JSON.stringify(saved), { mode: 0o600 });
-    deepSeekStorage = "server-file";
+    await loonyChatRest(DEEPSEEK_RTDB_PATH, { method: "PUT", body: saved });
+    deepSeekStorage = "firebase-realtime";
   }
   deepSeekApiKey = apiKey;
   loonyBotState.aiConfigured = true;
