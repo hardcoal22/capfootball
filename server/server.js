@@ -795,6 +795,7 @@ function createRoom(hostWs, mode) {
     score: { left: 0, right: 0 },
     gs: mode === "quad" ? freshGameStateQuad() : freshGameStateDuo(),
     inputs: mode === "quad" ? freshInputsQuad() : freshInputsDuo(),
+    countdownTimer: null,
     tickTimer: null,
     secondTimer: null,
     lastActivity: Date.now(),
@@ -822,6 +823,7 @@ function attachTestBot(room) {
 }
 
 function stopTimers(room) {
+  if (room.countdownTimer) { clearTimeout(room.countdownTimer); room.countdownTimer = null; }
   if (room.tickTimer) { clearInterval(room.tickTimer); room.tickTimer = null; }
   if (room.secondTimer) { clearInterval(room.secondTimer); room.secondTimer = null; }
 }
@@ -833,21 +835,27 @@ function destroyRoom(room) {
 }
 
 function startGame(room, duration) {
+  stopTimers(room);
   room.duration = Math.max(MIN_DURATION, Math.min(MAX_DURATION, Math.round(duration) || 60));
   room.score = { left: 0, right: 0 };
   room.timeLeft = room.duration;
   room.inputs = room.mode === "quad" ? freshInputsQuad() : freshInputsDuo();
   if (room.mode === "quad") resetPositionsQuad(room, true); else resetPositionsDuo(room, true);
-  room.phase = "playing";
+  room.phase = "countdown";
   room.lastActivity = Date.now();
-  broadcast(room, { type: "gameStarted", mode: room.mode, duration: room.duration, score: room.score });
-
-  stopTimers(room);
-  room.tickTimer = setInterval(() => (room.mode === "quad" ? tickQuad(room) : tickDuo(room)), TICK_MS);
-  room.secondTimer = setInterval(() => {
-    room.timeLeft = Math.max(0, room.timeLeft - 1);
-    if (room.timeLeft <= 0) endGame(room);
-  }, 1000);
+  broadcast(room, { type: "gameCountdown", mode: room.mode, duration: room.duration, score: room.score, seconds: 3 });
+  room.countdownTimer = setTimeout(() => {
+    room.countdownTimer = null;
+    if (room.phase !== "countdown") return;
+    room.phase = "playing";
+    room.lastActivity = Date.now();
+    broadcast(room, { type: "gameStarted", mode: room.mode, duration: room.duration, score: room.score });
+    room.tickTimer = setInterval(() => (room.mode === "quad" ? tickQuad(room) : tickDuo(room)), TICK_MS);
+    room.secondTimer = setInterval(() => {
+      room.timeLeft = Math.max(0, room.timeLeft - 1);
+      if (room.timeLeft <= 0) endGame(room);
+    }, 1000);
+  }, 3000);
 }
 
 function endGame(room) {

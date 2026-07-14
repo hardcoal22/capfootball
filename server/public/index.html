@@ -131,6 +131,16 @@ h2 { font-size:1.5rem; color:#a0f0ff; text-shadow:0 0 12px #00f5ff; }
   pointer-events:none;
 }
 #pause-overlay.visible { display:flex; }
+#kickoff-overlay {
+  display:none; position:absolute; inset:0; z-index:5; align-items:center; justify-content:center;
+  background:radial-gradient(circle at center,rgba(8,18,48,.2),rgba(2,5,18,.72));
+  color:#fff; font-size:7rem; font-weight:900; letter-spacing:6px;
+  text-shadow:0 0 18px #00f5ff,0 0 50px rgba(191,0,255,.9),0 5px 0 rgba(0,0,0,.65);
+  pointer-events:none;
+}
+#kickoff-overlay.visible { display:flex; }
+#kickoff-overlay.pop { animation:kickoffPop .72s ease-out; }
+@keyframes kickoffPop { 0%{transform:scale(.45);opacity:.2} 35%{transform:scale(1.12);opacity:1} 100%{transform:scale(1);opacity:.85} }
 .cyan { color:#00f5ff; text-shadow:0 0 6px rgba(0,245,255,0.35); }
 .red  { color:#ff3366; text-shadow:0 0 6px rgba(255,51,102,0.35); }
 canvas#canvas {
@@ -349,6 +359,7 @@ canvas#canvas {
       <canvas id="canvas" width="1000" height="520"></canvas>
       <button id="pause-btn" onclick="togglePause()">Pause</button>
       <div id="pause-overlay">PAUSED</div>
+      <div id="kickoff-overlay" aria-live="assertive">3</div>
       <div id="ping-info"></div>
     </div>
   </div>
@@ -486,7 +497,7 @@ const ROLL_COOLDOWN_TICKS=90, ROLL_TICKS=22, ROLL_HIT_SPEED=18;
 let playerMode=null, timeLeft=0, score={left:0,right:0};
 function isQuadMode(){ return playerMode==='quadSolo'||playerMode==='quadLocal'||playerMode==='quadOnline'; }
 function currentRoster(){ return isQuadMode() ? [gs.LA,gs.LK,gs.RA,gs.RK] : [gs.L,gs.R]; }
-let gameRunning=false, gamePaused=false, animId=null, timerId=null, lastFrame=0, lastDuration=60;
+let gameRunning=false, gamePaused=false, animId=null, timerId=null, kickoffTimerId=null, kickoffGoTimerId=null, lastFrame=0, lastDuration=60;
 let audioCtx=null;
 // Online (native WebSocket) — auto-detects local vs deployed host
 const WS_URL=(location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws';
@@ -875,6 +886,20 @@ function _handleWsMsg(e){
       playerMode=mySeat?'quadOnline':'online'; showDurationMenu(); break;
     case 'waitingForHost':
       (mySeat?setStatusQuad:setStatus)('ALL PLAYERS CONNECTED — WAITING FOR HOST TO START...', true); break;
+    case 'gameCountdown':
+      autoChatDuel=false;
+      document.getElementById('online-menu').classList.add('hidden');
+      document.getElementById('quad-online-menu').classList.add('hidden');
+      document.getElementById('duration-menu').classList.add('hidden');
+      document.getElementById('end-screen').classList.add('hidden');
+      playerMode=msg.mode==='quad'?'quadOnline':'online';
+      lastDuration=msg.duration; timeLeft=msg.duration;
+      score=msg.score||{left:0,right:0};
+      if(mySeat){ gs[mySeat].forceSnap=true; }
+      else if(mySide){(mySide==='left'?gs.L:gs.R).forceSnap=true;}
+      resetAll(); showPreGameField();
+      showKickoffCountdown(msg.seconds||3);
+      break;
     case 'gameStarted':
       autoChatDuel=false;
       document.getElementById('online-menu').classList.add('hidden');
@@ -886,7 +911,7 @@ function _handleWsMsg(e){
       score=msg.score||{left:0,right:0};
       if(mySeat){ gs[mySeat].forceSnap=true; }
       else if(mySide){(mySide==='left'?gs.L:gs.R).forceSnap=true;}
-      resetAll(); startGameInternal(); break;
+      resetAll(); showKickoffGo(); startGameInternal(); break;
     case 'state':{
       if(!gameRunning)return;
       if(msg.mode==='quad'){
@@ -1160,6 +1185,44 @@ function chooseModeQuad(m){
   document.getElementById('quad-menu').classList.add('hidden');
   showDurationMenu();
 }
+function showPreGameField(){
+  gameRunning=false;gamePaused=false;updatePauseUI();
+  document.getElementById('game-area').classList.remove('hidden');
+  updateHUD();render();
+}
+function kickoffText(text){
+  const overlay=document.getElementById('kickoff-overlay');
+  overlay.textContent=String(text);
+  overlay.classList.remove('pop');void overlay.offsetWidth;overlay.classList.add('pop');
+}
+function clearKickoffCountdown(hide=true){
+  if(kickoffTimerId){clearInterval(kickoffTimerId);kickoffTimerId=null;}
+  if(kickoffGoTimerId){clearTimeout(kickoffGoTimerId);kickoffGoTimerId=null;}
+  if(hide)document.getElementById('kickoff-overlay').classList.remove('visible','pop');
+}
+function showKickoffCountdown(seconds=3,onGo=null){
+  clearKickoffCountdown();showPreGameField();
+  const overlay=document.getElementById('kickoff-overlay');
+  let remaining=Math.max(1,Math.round(seconds)||3);
+  overlay.classList.add('visible');kickoffText(remaining);
+  kickoffTimerId=setInterval(()=>{
+    remaining--;
+    if(remaining>0){kickoffText(remaining);return;}
+    clearInterval(kickoffTimerId);kickoffTimerId=null;
+    kickoffText('GO!');
+    if(typeof onGo==='function')onGo();
+    kickoffGoTimerId=setTimeout(()=>clearKickoffCountdown(),550);
+  },1000);
+}
+function showKickoffGo(){
+  clearKickoffCountdown(false);
+  const overlay=document.getElementById('kickoff-overlay');
+  overlay.classList.add('visible');kickoffText('GO!');
+  kickoffGoTimerId=setTimeout(()=>clearKickoffCountdown(),550);
+}
+function startGameWithCountdown(){
+  showKickoffCountdown(3,()=>startGameInternal());
+}
 function startGame(secs){
   lastDuration=secs;
   document.getElementById('duration-menu').classList.add('hidden');
@@ -1167,7 +1230,7 @@ function startGame(secs){
     gameWs.send(JSON.stringify({type:'chooseDuration',duration:secs}));
     return;
   }
-  resetAll(); timeLeft=secs; startGameInternal();
+  resetAll(); timeLeft=secs; startGameWithCountdown();
 }
 function startGameInternal(){
   document.getElementById('game-area').classList.remove('hidden');
@@ -1213,9 +1276,10 @@ function rematch(){
     gameWs.send(JSON.stringify({type:'rematch',duration:lastDuration}));
     return;
   }
-  resetAll(); timeLeft=lastDuration; startGameInternal();
+  resetAll(); timeLeft=lastDuration; startGameWithCountdown();
 }
 function stopGame(){
+  clearKickoffCountdown();
   gameRunning=false; gamePaused=false; updatePauseUI();
   if(animId){cancelAnimationFrame(animId);animId=null;}
   if(timerId){clearInterval(timerId);timerId=null;}
@@ -1432,7 +1496,7 @@ function playTournamentMatch(r,i){
   tournament.cur={r,i}; tournament.oppName=opp;
   document.getElementById('bracket-screen').classList.add('hidden');
   playerMode='single'; // You control RED (right); the opponent is the AI (cyan)
-  resetAll(); timeLeft=tournament.matchSecs; startGameInternal();
+  resetAll(); timeLeft=tournament.matchSecs; startGameWithCountdown();
   document.getElementById('ctrl-ai-text').innerHTML='Cyan =<br>'+opp.replace(/</g,'&lt;');
 }
 function finishTournamentMatch(){
