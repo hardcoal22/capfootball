@@ -24,12 +24,15 @@ html.hosted #stars-bg { opacity:.78; }
 #stars-bg { position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:0; }
 #loony-home-btn {
   position:fixed; top:14px; left:14px; z-index:20;
-  padding:8px 12px; border:1px solid rgba(0,245,255,.55); border-radius:8px;
-  color:#a0f0ff; background:rgba(3,8,20,.84); text-decoration:none;
-  font-size:.72rem; font-weight:800; letter-spacing:1px;
-  box-shadow:0 0 14px rgba(0,245,255,.18);
+  width:44px; height:44px; padding:0;
+  display:grid; place-items:center;
+  border:1px solid rgba(255,184,77,.78); border-radius:50%;
+  color:#ffd080; background:rgba(67,31,8,.9); text-decoration:none;
+  font-size:1.45rem; font-weight:800; line-height:1;
+  box-shadow:0 0 16px rgba(255,126,36,.22);
 }
-#loony-home-btn:hover { color:#fff; border-color:#00f5ff; background:rgba(0,80,110,.8); }
+#loony-home-btn:hover { color:#fff4dc; border-color:#ffb84d; background:rgba(151,62,8,.94); }
+#loony-home-btn:focus-visible { outline:2px solid #ffd080; outline-offset:3px; }
 #menu,#duration-menu,#online-menu,#end-screen {
   display:flex; flex-direction:column; align-items:center; gap:20px;
   position:relative; z-index:1;
@@ -228,7 +231,7 @@ canvas#canvas {
 </head>
 <body>
 <canvas id="stars-bg"></canvas>
-<a id="loony-home-btn" href="https://loony.epizy.com/">&#8592; Loony Games</a>
+<a id="loony-home-btn" href="https://loony.epizy.com/" title="Back to Loony Games" aria-label="Back to Loony Games">&#8592;</a>
 
 <!-- MAIN MENU -->
 <div id="menu">
