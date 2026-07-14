@@ -50,6 +50,7 @@ const LOONY_CHAT_DATABASE_URL = String(
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
 const DEEPSEEK_CONFIG_COLLECTION = process.env.DEEPSEEK_CONFIG_COLLECTION || "serverConfig";
 const DEEPSEEK_CONFIG_DOC = "loonyBotDeepSeek";
+const LOONY_ADMIN_UIDS = String(process.env.LOONY_ADMIN_UIDS || "jUMonaXXnyX9E4Jei7NbPXJL8jC2").split(",").map(value => value.trim()).filter(Boolean);
 let deepSeekApiKey = String(process.env.DEEPSEEK_API_KEY || "").trim();
 const LOONY_BOT_POLL_MS = Math.max(1500, Number(process.env.LOONY_BOT_POLL_MS || 2500));
 const LOONY_BOT_HEARTBEAT_MS = Math.max(15000, Number(process.env.LOONY_BOT_HEARTBEAT_MS || 25000));
@@ -295,7 +296,11 @@ async function verifiedConfigUser(req) {
   if (!firebaseAuth) throw new Error("Loony Firebase Admin authentication is not configured");
   const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
   if (!token) throw new Error("Sign in to Loony before changing the bot key");
-  return firebaseAuth.verifyIdToken(token);
+  const decoded = await firebaseAuth.verifyIdToken(token);
+  if (!LOONY_ADMIN_UIDS.includes(decoded.uid) && decoded.admin !== true) {
+    throw new Error("This Loony account is not an admin");
+  }
+  return decoded;
 }
 
 function setLoonyPresence(ws, patch) {
@@ -1366,7 +1371,8 @@ app.post("/api/loony-bot/deepseek-key", async (req, res) => {
     res.json({ ok: true, configured: true, model: DEEPSEEK_MODEL });
   } catch (error) {
     const authError = /token|sign in|authentication/i.test(error.message || "");
-    res.status(authError ? 401 : 503).json({ ok: false, error: String(error.message || error).slice(0, 220) });
+    const forbidden = /not an admin/i.test(error.message || "");
+    res.status(forbidden ? 403 : authError ? 401 : 503).json({ ok: false, error: String(error.message || error).slice(0, 220) });
   }
 });
 app.post("/api/loony-bot/deepseek-test", async (req, res) => {
@@ -1379,7 +1385,8 @@ app.post("/api/loony-bot/deepseek-test", async (req, res) => {
     res.json({ ok: true, model: DEEPSEEK_MODEL, reply });
   } catch (error) {
     const authError = /token|sign in|authentication/i.test(error.message || "");
-    res.status(authError ? 401 : 502).json({ ok: false, error: String(error.message || error).slice(0, 220) });
+    const forbidden = /not an admin/i.test(error.message || "");
+    res.status(forbidden ? 403 : authError ? 401 : 502).json({ ok: false, error: String(error.message || error).slice(0, 220) });
   }
 });
 app.post("/api/register", async (req, res) => {
