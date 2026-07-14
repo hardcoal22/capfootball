@@ -39,6 +39,28 @@ const CHAT_HISTORY_LIMIT = 100;
 const LOONY_PRESENCE_STALE_MS = Number(process.env.LOONY_PRESENCE_STALE_MS || 2.5 * 60 * 1000);
 const EXPECTED_FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "generaluserstation";
 const REQUIRE_ONEPASS_FIREBASE = String(process.env.REQUIRE_ONEPASS_FIREBASE || "true").toLowerCase() !== "false";
+const LOONY_BOT_ENABLED = String(process.env.LOONY_BOT_ENABLED || "true").toLowerCase() !== "false";
+const LOONY_BOT_UID = process.env.LOONY_BOT_UID || "loony-test-bot";
+const LOONY_BOT_NAME = process.env.LOONY_BOT_NAME || "Loony Bot";
+const LOONY_CHAT_DATABASE_URL = String(
+  process.env.LOONY_CHAT_DATABASE_URL ||
+  "https://topsnooker-2f4cf-default-rtdb.europe-west1.firebasedatabase.app"
+).replace(/\/+$/, "");
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
+const LOONY_BOT_POLL_MS = Math.max(1500, Number(process.env.LOONY_BOT_POLL_MS || 2500));
+const LOONY_BOT_HEARTBEAT_MS = Math.max(15000, Number(process.env.LOONY_BOT_HEARTBEAT_MS || 25000));
+const loonyBotState = {
+  running: false,
+  aiConfigured: Boolean(process.env.DEEPSEEK_API_KEY),
+  lastMessageKey: null,
+  lastReplyAt: null,
+  lastError: null
+};
+let loonyBotPollTimer = null;
+let loonyBotHeartbeatTimer = null;
+let loonyBotBusy = false;
+const loonyBotRecentChat = [];
+const loonyBotLastReplyByUser = new Map();
 
 function userDisplayName(id, data) {
   return cleanName(
@@ -241,6 +263,166 @@ function sendLobbyChatHistory(ws) {
       send(ws, { type: "lobbyHistory", messages });
     })
     .catch(e => console.error("Slime chat history:", e.message));
+}
+
+function loonyChatRestUrl(pathName, query) {
+  return LOONY_CHAT_DATABASE_URL + "/" + pathName.replace(/^\/+/, "") + ".json" + (query || "");
+}
+
+async function loonyChatRest(pathName, options = {}) {
+  const response = await fetch(loonyChatRestUrl(pathName, options.query), {
+    method: options.method || "GET",
+    headers: options.body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    signal: AbortSignal.timeout(20000)
+  });
+  if (!response.ok) throw new Error("Loony chat database returned " + response.status);
+  if (response.status === 204) return null;
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
+}
+
+async function publishLoonyBotPresence() {
+  await loonyChatRest("siteChat/presence/" + LOONY_BOT_UID, {
+    method: "PUT",
+    body: {
+      name: LOONY_BOT_NAME,
+      uid: LOONY_BOT_UID,
+      bot: true,
+      aiReady: Boolean(process.env.DEEPSEEK_API_KEY),
+      games: ["slime", "mathtrack", "topsnooker"],
+      ts: Date.now()
+    }
+  });
+}
+
+function loonyBotWasAddressed(message) {
+  const text = String(message && message.text || "").trim();
+  return /(^|\s)@?loony\s*bot\b|@loonybot\b|(^|\s)bot(?:\s|[,:!?]|$)/i.test(text);
+}
+
+function rememberLoonyChatMessage(message) {
+  if (!message || !message.text) return;
+  loonyBotRecentChat.push({
+    uid: String(message.uid || ""),
+    name: String(message.name || "Player").slice(0, 60),
+    text: String(message.text || "").slice(0, 300)
+  });
+  while (loonyBotRecentChat.length > 16) loonyBotRecentChat.shift();
+}
+
+async function askDeepSeekForLoonyReply() {
+  const apiKey = String(process.env.DEEPSEEK_API_KEY || "").trim();
+  if (!apiKey) {
+    return "I’m online and ready to play, but my DeepSeek API key still needs to be connected on the server.";
+  }
+  const messages = [{
+    role: "system",
+    content: "You are Loony Bot, the friendly resident of the Loony Games website. " +
+      "Reply conversationally in one or two short sentences with no Markdown. " +
+      "You can be challenged to Slime Soccer, MathTrack, and Top Snooker from Loony Chat. " +
+      "Be playful but never insulting, do not claim you performed actions you did not perform, and keep replies under 240 characters."
+  }];
+  loonyBotRecentChat.slice(-12).forEach(item => {
+    messages.push({
+      role: item.uid === LOONY_BOT_UID ? "assistant" : "user",
+      content: item.uid === LOONY_BOT_UID ? item.text : item.name + ": " + item.text
+    });
+  });
+  const response = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": "Bearer " + apiKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: DEEPSEEK_MODEL,
+      messages,
+      thinking: { type: "disabled" },
+      max_tokens: 120,
+      temperature: 0.8,
+      stream: false
+    }),
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).replace(/\s+/g, " ").slice(0, 180);
+    throw new Error("DeepSeek returned " + response.status + (detail ? ": " + detail : ""));
+  }
+  const data = await response.json();
+  const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+  const reply = String(content || "").replace(/\s+/g, " ").trim().slice(0, 300);
+  if (!reply) throw new Error("DeepSeek returned an empty reply");
+  return reply;
+}
+
+async function postLoonyBotMessage(text) {
+  const message = {
+    uid: LOONY_BOT_UID,
+    name: LOONY_BOT_NAME,
+    text: String(text || "").trim().slice(0, 300),
+    bot: true,
+    ts: Date.now()
+  };
+  await loonyChatRest("siteChat/messages", { method: "POST", body: message });
+  rememberLoonyChatMessage(message);
+  loonyBotState.lastReplyAt = new Date().toISOString();
+}
+
+async function replyAsLoonyBot(message) {
+  const uid = String(message.uid || message.name || "unknown");
+  const lastReply = loonyBotLastReplyByUser.get(uid) || 0;
+  if (Date.now() - lastReply < 8000 || loonyBotBusy) return;
+  loonyBotLastReplyByUser.set(uid, Date.now());
+  loonyBotBusy = true;
+  try {
+    const reply = await askDeepSeekForLoonyReply();
+    await postLoonyBotMessage(reply);
+    loonyBotState.lastError = null;
+  } catch (error) {
+    loonyBotState.lastError = String(error.message || error).slice(0, 220);
+    console.error("Loony Bot reply:", loonyBotState.lastError);
+  } finally {
+    loonyBotBusy = false;
+  }
+}
+
+async function pollLoonyChatForBot() {
+  const data = await loonyChatRest("siteChat/messages", {
+    query: "?orderBy=%22%24key%22&limitToLast=30"
+  });
+  const entries = Object.entries(data || {}).sort((a, b) => a[0].localeCompare(b[0]));
+  if (loonyBotState.lastMessageKey === null) {
+    entries.forEach(([, message]) => rememberLoonyChatMessage(message));
+    loonyBotState.lastMessageKey = entries.length ? entries[entries.length - 1][0] : "";
+    return;
+  }
+  const fresh = entries.filter(([key]) => key > loonyBotState.lastMessageKey);
+  for (const [key, message] of fresh) {
+    loonyBotState.lastMessageKey = key;
+    if (!message || message.uid === LOONY_BOT_UID) continue;
+    rememberLoonyChatMessage(message);
+    if (loonyBotWasAddressed(message)) await replyAsLoonyBot(message);
+  }
+}
+
+function startLoonyBot() {
+  if (!LOONY_BOT_ENABLED || loonyBotState.running) return;
+  loonyBotState.running = true;
+  loonyBotState.aiConfigured = Boolean(process.env.DEEPSEEK_API_KEY);
+  const heartbeat = () => publishLoonyBotPresence().catch(error => {
+    loonyBotState.lastError = String(error.message || error).slice(0, 220);
+    console.error("Loony Bot presence:", loonyBotState.lastError);
+  });
+  const poll = () => pollLoonyChatForBot().catch(error => {
+    loonyBotState.lastError = String(error.message || error).slice(0, 220);
+    console.error("Loony Bot chat poll:", loonyBotState.lastError);
+  });
+  heartbeat();
+  poll();
+  loonyBotHeartbeatTimer = setInterval(heartbeat, LOONY_BOT_HEARTBEAT_MS);
+  loonyBotPollTimer = setInterval(poll, LOONY_BOT_POLL_MS);
+  console.log("Loony Bot started (DeepSeek " + (loonyBotState.aiConfigured ? "configured" : "key missing") + ", model " + DEEPSEEK_MODEL + ")");
 }
 
 let _saveTimer = null;
@@ -486,7 +668,7 @@ function attachTestBot(room) {
     send() {},
     close() { this.readyState = WebSocket.CLOSED; },
     playerName: null,
-    lobbyName: "Test Player",
+    lobbyName: LOONY_BOT_NAME,
     clientId: 0,
     room,
     side: "right",
@@ -1066,6 +1248,18 @@ app.use("/api", (req, res, next) => {
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
+app.get("/api/loony-bot/status", (req, res) => {
+  res.json({
+    online: loonyBotState.running,
+    name: LOONY_BOT_NAME,
+    uid: LOONY_BOT_UID,
+    aiConfigured: Boolean(process.env.DEEPSEEK_API_KEY),
+    model: DEEPSEEK_MODEL,
+    games: ["slime", "mathtrack", "topsnooker"],
+    lastReplyAt: loonyBotState.lastReplyAt,
+    lastError: loonyBotState.lastError
+  });
+});
 app.post("/api/register", async (req, res) => {
   try {
     const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
@@ -1149,5 +1343,6 @@ setInterval(() => {
 initRecordStore().finally(() => {
   server.listen(port, () => {
     console.log("Slime Soccer server listening on http://localhost:" + port + " (ws path /ws)");
+    startLoonyBot();
   });
 });

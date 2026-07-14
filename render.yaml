@@ -7,3 +7,10 @@ services:
     startCommand: npm start
     plan: free
     autoDeploy: true
+    envVars:
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_MODEL
+        value: deepseek-v4-flash
+      - key: LOONY_BOT_ENABLED
+        value: "true"
