@@ -358,6 +358,62 @@ async function verifiedConfigUser(req) {
   return decoded;
 }
 
+// Credits, trophies and access keys are deliberately issued here on the
+// trusted server. Browser games must never be able to write them directly.
+function rewardText(value, limit) {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, limit);
+}
+
+function normalizeReward(raw) {
+  raw = raw && typeof raw === "object" ? raw : {};
+  const id = rewardText(raw.id || raw.title, 64).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const title = rewardText(raw.title, 80);
+  const description = rewardText(raw.description, 220);
+  const key = rewardText(raw.key, 64).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+  const credits = Math.max(0, Math.min(100000, Math.floor(Number(raw.credits) || 0)));
+  if (!id || !title) throw Object.assign(new Error("Give the reward a title"), { status: 400 });
+  if (!credits && !key) throw Object.assign(new Error("A reward needs credits or an access key"), { status: 400 });
+  return { id, title, description, credits, key };
+}
+
+async function rewardRecipient(value) {
+  if (!firestore) throw Object.assign(new Error("Firebase reward storage is not configured on this server"), { status: 503 });
+  const target = rewardText(value, 180);
+  if (!target) throw Object.assign(new Error("Enter the player's email or user ID"), { status: 400 });
+  if (!target.includes("@")) {
+    const ref = firestore.collection(ONEPASS_USERS_COLLECTION).doc(target);
+    const snap = await ref.get();
+    if (!snap.exists) throw Object.assign(new Error("No Loony account was found with that user ID"), { status: 404 });
+    return { ref, uid: snap.id };
+  }
+  const found = await firestore.collection(ONEPASS_USERS_COLLECTION).where("email", "==", target.toLowerCase()).limit(2).get();
+  if (found.empty) throw Object.assign(new Error("No Loony account was found with that email"), { status: 404 });
+  if (found.size > 1) throw Object.assign(new Error("More than one account uses that email; use the user ID"), { status: 409 });
+  return { ref: found.docs[0].ref, uid: found.docs[0].id };
+}
+
+async function grantReward(recipient, reward, admin) {
+  let result;
+  await firestore.runTransaction(async tx => {
+    const snap = await tx.get(recipient.ref);
+    if (!snap.exists) throw Object.assign(new Error("That Loony account no longer exists"), { status: 404 });
+    const data = snap.data() || {};
+    const awards = Array.isArray(data.awards) ? data.awards.slice(0, 200) : [];
+    const alreadyHadAward = awards.some(item => String(item && typeof item === "object" ? item.id : item) === reward.id);
+    const accessKeys = Array.isArray(data.accessKeys) ? data.accessKeys.map(String).filter(Boolean) : [];
+    if (reward.key && !accessKeys.includes(reward.key)) accessKeys.push(reward.key);
+    const credits = Math.max(0, Number(data.credits) || 0) + (alreadyHadAward ? 0 : reward.credits);
+    if (!alreadyHadAward) awards.push({
+      id: reward.id, title: reward.title, description: reward.description,
+      credits: reward.credits, key: reward.key, grantedAt: new Date().toISOString(), grantedBy: admin.uid
+    });
+    const account = { credits, awards: awards.slice(-200), accessKeys };
+    tx.set(recipient.ref, { ...account, account, rewardsUpdatedAt: new Date().toISOString(), rewardsUpdatedBy: admin.uid }, { merge: true });
+    result = { uid: recipient.uid, name: data.displayName || data.name || data.email || recipient.uid, account, alreadyHadAward };
+  });
+  return result;
+}
+
 function setLoonyPresence(ws, patch) {
   if (!firestore || !ws || !ws.userId) return;
   firestore.collection(ONEPASS_USERS_COLLECTION).doc(ws.userId).set({
@@ -1451,6 +1507,19 @@ app.post("/api/loony-bot/deepseek-test", async (req, res) => {
     const authError = /token|sign in|authentication/i.test(error.message || "");
     const forbidden = /not an admin/i.test(error.message || "");
     res.status(forbidden ? 403 : authError ? 401 : 502).json({ ok: false, error: String(error.message || error).slice(0, 220) });
+  }
+});
+app.post("/api/loony-rewards", async (req, res) => {
+  try {
+    const admin = await verifiedConfigUser(req);
+    const recipient = await rewardRecipient(req.body && req.body.recipient);
+    const reward = normalizeReward(req.body && req.body.reward);
+    const result = await grantReward(recipient, reward, admin);
+    res.json({ ok: true, result });
+  } catch (error) {
+    const authError = /token|sign in|authentication/i.test(error.message || "");
+    const forbidden = /not an admin/i.test(error.message || "");
+    res.status(error.status || (forbidden ? 403 : authError ? 401 : 500)).json({ ok: false, error: String(error.message || error).slice(0, 220) });
   }
 });
 app.post("/api/register", async (req, res) => {
