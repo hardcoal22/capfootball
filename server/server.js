@@ -334,9 +334,9 @@ async function verifiedOnePassUser(idToken) {
   return record;
 }
 
-async function verifiedConfigUser(req) {
+async function verifiedLoonyUser(req) {
   const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
-  if (!token) throw new Error("Sign in to Loony before changing the bot key");
+  if (!token) throw Object.assign(new Error("Sign in to Loony first"), { status: 401 });
   let decoded;
   if (firebaseAuth) {
     decoded = await firebaseAuth.verifyIdToken(token);
@@ -349,11 +349,16 @@ async function verifiedConfigUser(req) {
     });
     const data = await response.json();
     const user = data && data.users && data.users[0];
-    if (!response.ok || !user) throw new Error("Loony sign-in token could not be verified");
+    if (!response.ok || !user) throw Object.assign(new Error("Loony sign-in token could not be verified"), { status: 401 });
     decoded = { uid: user.localId, email: user.email || "", admin: false };
   }
+  return decoded;
+}
+
+async function verifiedConfigUser(req) {
+  const decoded = await verifiedLoonyUser(req);
   if (!LOONY_ADMIN_UIDS.includes(decoded.uid) && decoded.admin !== true) {
-    throw new Error("This Loony account is not an admin");
+    throw Object.assign(new Error("This Loony account is not an admin"), { status: 403 });
   }
   return decoded;
 }
@@ -410,6 +415,55 @@ async function grantReward(recipient, reward, admin) {
     const account = { credits, awards: awards.slice(-200), accessKeys };
     tx.set(recipient.ref, { ...account, account, rewardsUpdatedAt: new Date().toISOString(), rewardsUpdatedBy: admin.uid }, { merge: true });
     result = { uid: recipient.uid, name: data.displayName || data.name || data.email || recipient.uid, account, alreadyHadAward };
+  });
+  return result;
+}
+
+async function grantTopSnookerWin(user, roomCode) {
+  roomCode = rewardText(roomCode, 8);
+  if (!/^\d{4}$/.test(roomCode)) throw Object.assign(new Error("Invalid Top Snooker match"), { status: 400 });
+  if (!firestore) throw Object.assign(new Error("Firebase reward storage is not configured on this server"), { status: 503 });
+
+  const room = await loonyChatRest("snooker/rooms/" + roomCode);
+  const winner = Number(room && room.state && room.state.winner);
+  const players = room && room.loonyPlayers;
+  const winnerUid = players && String(players[winner] || "");
+  if (!room || room.joined !== true || !room.state || room.state.gameOver !== true || ![0, 1].includes(winner)) {
+    throw Object.assign(new Error("That Top Snooker match has not ended with a verified winner"), { status: 409 });
+  }
+  if (winnerUid !== user.uid) throw Object.assign(new Error("This account is not the winner of that match"), { status: 403 });
+
+  const matchKey = roomCode + "|" + String(room.createdAt || "unknown");
+  const claimId = crypto.createHash("sha256").update("topsnooker|" + matchKey).digest("hex");
+  const claimRef = firestore.collection("rewardClaims").doc(claimId);
+  const userRef = firestore.collection(ONEPASS_USERS_COLLECTION).doc(user.uid);
+  let result;
+  await firestore.runTransaction(async tx => {
+    const [claimSnap, userSnap] = await Promise.all([tx.get(claimRef), tx.get(userRef)]);
+    if (claimSnap.exists) {
+      const data = userSnap.exists ? userSnap.data() || {} : {};
+      result = { alreadyClaimed: true, credits: Math.max(0, Number(data.credits) || 0) };
+      return;
+    }
+    if (!userSnap.exists) throw Object.assign(new Error("Your Loony account profile was not found"), { status: 404 });
+    const data = userSnap.data() || {};
+    const awards = Array.isArray(data.awards) ? data.awards.slice(-199) : [];
+    const accessKeys = Array.isArray(data.accessKeys) ? data.accessKeys.map(String).filter(Boolean) : [];
+    const credits = Math.max(0, Number(data.credits) || 0) + 100;
+    const now = new Date().toISOString();
+    awards.push({
+      id: "topsnooker-win-" + claimId.slice(0, 16),
+      title: "Top Snooker Winner",
+      description: "Won an online Top Snooker match.",
+      credits: 100,
+      key: "",
+      grantedAt: now,
+      grantedBy: "topsnooker"
+    });
+    const account = { credits, awards, accessKeys };
+    tx.set(userRef, { ...account, account, rewardsUpdatedAt: now, rewardsUpdatedBy: "topsnooker" }, { merge: true });
+    tx.set(claimRef, { game: "topsnooker", matchId: roomCode, matchCreatedAt: room.createdAt || null, uid: user.uid, credits: 100, createdAt: now });
+    result = { alreadyClaimed: false, credits };
   });
   return result;
 }
@@ -1520,6 +1574,18 @@ app.post("/api/loony-rewards", async (req, res) => {
     const authError = /token|sign in|authentication/i.test(error.message || "");
     const forbidden = /not an admin/i.test(error.message || "");
     res.status(error.status || (forbidden ? 403 : authError ? 401 : 500)).json({ ok: false, error: String(error.message || error).slice(0, 220) });
+  }
+});
+app.post("/api/loony-rewards/game-win", async (req, res) => {
+  try {
+    const user = await verifiedLoonyUser(req);
+    const game = rewardText(req.body && req.body.game, 40).toLowerCase();
+    if (game !== "topsnooker") throw Object.assign(new Error("That game does not support automatic win rewards"), { status: 400 });
+    const result = await grantTopSnookerWin(user, req.body && req.body.matchId);
+    res.json({ ok: true, result });
+  } catch (error) {
+    const authError = /token|sign in|authentication/i.test(error.message || "");
+    res.status(error.status || (authError ? 401 : 500)).json({ ok: false, error: String(error.message || error).slice(0, 220) });
   }
 });
 app.post("/api/register", async (req, res) => {
