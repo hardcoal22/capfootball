@@ -517,20 +517,46 @@ let onePassToken=null;
 let loonyHandoffToken=null;
 let pendingChatDuel=null;
 let autoChatDuel=false;
-window.addEventListener('message',e=>{
-  if(e.origin!=='https://loony.epizy.com')return;
-  const data=e.data||{};
-  if(data.type!=='loony-slime-duel-request'||!data.toUid||gameRunning)return;
+let loonySlimeChatReady=false;
+let pendingChatDuelRoom='';
+function beginPersonalSlimeDuel(toUid,toName){
+  if(!toUid||gameRunning)return;
   pendingChatDuel={
-    toUid:String(data.toUid),
-    toName:String(data.toName||'Player'),
-    testBot:String(data.toUid)==='loony-test-bot'
+    toUid:String(toUid).slice(0,128),
+    toName:String(toName||'Player').slice(0,60),
+    testBot:String(toUid)==='loony-test-bot'
   };
   autoChatDuel=true;
   document.getElementById('menu').classList.add('hidden');
   document.getElementById('online-menu').classList.remove('hidden');
-  setStatus('CREATING DUEL FOR '+pendingChatDuel.toName.toUpperCase()+'...',true);
+  setStatus('CREATING PRIVATE DUEL FOR '+pendingChatDuel.toName.toUpperCase()+'...',true);
   hostGame(true,pendingChatDuel.testBot);
+}
+function sendPendingPersonalSlimeInvite(){
+  if(!loonySlimeChatReady||!pendingChatDuel||pendingChatDuel.testBot||!pendingChatDuelRoom)return false;
+  const chatFrame=document.querySelector('#loony-shared-chat-panel iframe');
+  if(!chatFrame||!chatFrame.contentWindow)return false;
+  chatFrame.contentWindow.postMessage({
+    type:'loony-slime-duel-room',
+    toUid:pendingChatDuel.toUid,
+    toName:pendingChatDuel.toName,
+    roomId:pendingChatDuelRoom
+  },'https://loony.epizy.com');
+  setStatus('PERSONAL INVITE SENT TO '+pendingChatDuel.toName.toUpperCase()+' - WAITING...',true);
+  pendingChatDuel=null;
+  pendingChatDuelRoom='';
+  return true;
+}
+window.addEventListener('message',e=>{
+  if(e.origin!=='https://loony.epizy.com')return;
+  const data=e.data||{};
+  if(data.type==='loony-slime-chat-ready'){
+    loonySlimeChatReady=!!data.signedIn;
+    sendPendingPersonalSlimeInvite();
+    return;
+  }
+  if(data.type!=='loony-slime-duel-request'||!data.toUid||gameRunning)return;
+  beginPersonalSlimeDuel(data.toUid,data.toName);
 });
 window.addEventListener('onepass-auth',async e=>{
   const user=e.detail;
@@ -860,19 +886,15 @@ function _handleWsMsg(e){
           setStatus('WAITING FOR OPPONENT...', true);
           resetCopyBtn();
           if(pendingChatDuel){
-            const chatFrame=document.querySelector('#loony-shared-chat-panel iframe');
             if(pendingChatDuel.testBot){
               setStatus('TEST PLAYER CONNECTED - STARTING MATCH...',true);
-            } else if(chatFrame&&chatFrame.contentWindow){
-              chatFrame.contentWindow.postMessage({
-                type:'loony-slime-duel-room',
-                toUid:pendingChatDuel.toUid,
-                toName:pendingChatDuel.toName,
-                roomId:msg.roomId
-              },'https://loony.epizy.com');
-              setStatus('DUEL INVITE SENT TO '+pendingChatDuel.toName.toUpperCase()+' - WAITING...',true);
+              pendingChatDuel=null;
+            } else {
+              pendingChatDuelRoom=msg.roomId;
+              if(!sendPendingPersonalSlimeInvite()){
+                setStatus('PRIVATE ROOM READY - CONNECTING LOONY CHAT...',true);
+              }
             }
-            pendingChatDuel=null;
           }
         }
       }
@@ -1632,10 +1654,11 @@ function renderHallOfFame(players){
     return `<tr class="${me?'me':''} ${i===0?'hof-top1':''}">
       <td class="l hof-rank">${i===0?'🏆':(i+1)}</td>
       <td class="l">${esc(p.name)}</td>
+      <td>${p.bestWinScore>0?p.bestWinScore+':'+p.bestWinAgainst:'—'}</td>
       <td>${p.wins}</td><td>${p.losses}</td><td>${pct}%</td></tr>`;
   }).join('');
   body.innerHTML=`<table class="hof-table">
-    <thead><tr><th class="l">#</th><th class="l">NAME</th><th>W</th><th>L</th><th>WIN%</th></tr></thead>
+    <thead><tr><th class="l">#</th><th class="l">WINNER</th><th>SCORE</th><th>W</th><th>L</th><th>WIN%</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
 }
 
@@ -2373,6 +2396,14 @@ function loop(now){
 
 updateNameLabel(); // reflect any previously-registered name on the menu button
 loadHallOfFame();
+function startPersonalInviteFromLink(){
+  const params=new URLSearchParams(location.search);
+  const toUid=String(params.get('inviteUid')||'').trim().slice(0,128);
+  const toName=String(params.get('inviteName')||'Player').trim().slice(0,60);
+  if(!toUid)return;
+  history.replaceState(null,'',location.pathname);
+  beginPersonalSlimeDuel(toUid,toName);
+}
 function joinDuelFromLink(){
   const params=new URLSearchParams(location.search);
   const room=String(params.get('duel')||'').trim().toUpperCase();
@@ -2384,9 +2415,10 @@ function joinDuelFromLink(){
   history.replaceState(null,'',location.pathname);
   joinGame();
 }
+startPersonalInviteFromLink();
 joinDuelFromLink();
 setInterval(refreshLoonyOnline,15000);
 </script>
-<script src="https://loony.epizy.com/lounge.js?v=15" data-side="left" data-game="slime" defer></script>
+<script src="https://loony.epizy.com/lounge.js?v=22" data-side="left" data-game="slime" defer></script>
 </body>
 </html>

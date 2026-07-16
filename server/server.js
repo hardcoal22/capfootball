@@ -27,7 +27,7 @@ const WebSocket = require("ws");
 // otherwise a local JSON file. The file resets on ephemeral hosts (e.g. a free
 // Render dyno) on redeploy — that's exactly what Firestore fixes.
 const RECORDS_FILE = path.join(__dirname, "records.json");
-let records = {}; // { lowercaseKey: { name, wins, losses, games } }
+let records = {}; // { lowercaseKey: { name, wins, losses, games, bestWinScore, bestWinAgainst } }
 let firestore = null; // Firestore instance when the Firebase backend is active
 let firebaseAuth = null;
 let usingOnePassUsers = false;
@@ -89,13 +89,15 @@ function readGameStats(data) {
     wins: Number(nested.wins ?? data.wins ?? 0) || 0,
     losses: Number(nested.losses ?? data.losses ?? 0) || 0,
     games: Number(nested.games ?? data.games ?? 0) || 0,
+    bestWinScore: Number(nested.bestWinScore ?? data.bestWinScore ?? 0) || 0,
+    bestWinAgainst: Number(nested.bestWinAgainst ?? data.bestWinAgainst ?? 0) || 0,
   };
 }
 function rememberRecordAliases(id, data) {
   const name = userDisplayName(id, data);
   if (!name) return;
   const stats = readGameStats(data);
-  const record = { name, wins: stats.wins, losses: stats.losses, games: stats.games, userId: id };
+  const record = { name, wins: stats.wins, losses: stats.losses, games: stats.games, bestWinScore: stats.bestWinScore, bestWinAgainst: stats.bestWinAgainst, userId: id };
   const aliases = [id, data.name, data.username, data.displayName, data.playerName, data.email, name]
     .filter(Boolean)
     .map(v => cleanName(String(v).split("@")[0]).toLowerCase())
@@ -103,7 +105,14 @@ function rememberRecordAliases(id, data) {
   aliases.forEach(alias => { records[alias] = record; });
 }
 function publicRecord(record) {
-  return record ? { name: record.name, wins: record.wins || 0, losses: record.losses || 0, games: record.games || 0 } : null;
+  return record ? {
+    name: record.name,
+    wins: record.wins || 0,
+    losses: record.losses || 0,
+    games: record.games || 0,
+    bestWinScore: record.bestWinScore || 0,
+    bestWinAgainst: record.bestWinAgainst || 0,
+  } : null;
 }
 function uniqueRecords() {
   const seen = new Set();
@@ -431,6 +440,72 @@ async function grantReward(recipient, reward, admin) {
     const account = { credits, awards: awards.slice(-200), accessKeys };
     tx.set(recipient.ref, { ...account, account, rewardsUpdatedAt: new Date().toISOString(), rewardsUpdatedBy: admin.uid }, { merge: true });
     result = { uid: recipient.uid, name: data.displayName || data.name || data.email || recipient.uid, account, alreadyHadAward };
+  });
+  return result;
+}
+
+const QUIZ_REWARDS = Object.freeze({
+  general: "General Quiz", ww2: "World War II Quiz", alien: "Alien Quiz",
+  "80s-music": "80s Music Quiz", snooker: "Snooker Quiz"
+});
+
+async function grantQuizCompletion(user, rawClaim) {
+  rawClaim = rawClaim && typeof rawClaim === "object" ? rawClaim : {};
+  const quiz = rewardText(rawClaim.quiz, 40).toLowerCase();
+  const title = QUIZ_REWARDS[quiz];
+  const score = Math.floor(Number(rawClaim.score));
+  const correct = Math.floor(Number(rawClaim.correct));
+  const total = Math.floor(Number(rawClaim.total));
+  if (!title) throw Object.assign(new Error("That quiz does not support Loony credits"), { status: 400 });
+  if (!Number.isFinite(score) || score < 0 || score > 100000 || !Number.isFinite(correct) || !Number.isFinite(total) || total < 1 || total > 200 || correct < 0 || correct > total) throw Object.assign(new Error("Invalid quiz result"), { status: 400 });
+  if (!firestore) throw Object.assign(new Error("Firebase reward storage is not configured on this server"), { status: 503 });
+  const day = new Date().toISOString().slice(0, 10);
+  const claimId = crypto.createHash("sha256").update("quiz|" + user.uid + "|" + quiz + "|" + day).digest("hex");
+  const claimRef = firestore.collection("rewardClaims").doc(claimId);
+  const userRef = firestore.collection(ONEPASS_USERS_COLLECTION).doc(user.uid);
+  let result;
+  await firestore.runTransaction(async tx => {
+    const [claimSnap, userSnap] = await Promise.all([tx.get(claimRef), tx.get(userRef)]);
+    const data = userSnap.exists ? userSnap.data() || {} : {};
+    if (claimSnap.exists) { result = { alreadyClaimed: true, credits: Math.max(0, Number(data.credits) || 0) }; return; }
+    if (!userSnap.exists) throw Object.assign(new Error("Your Loony account profile was not found"), { status: 404 });
+    const awards = Array.isArray(data.awards) ? data.awards.slice(-199) : [];
+    const accessKeys = Array.isArray(data.accessKeys) ? data.accessKeys.map(String).filter(Boolean) : [];
+    const credits = Math.max(0, Number(data.credits) || 0) + 25;
+    const now = new Date().toISOString();
+    awards.push({ id: "quiz-" + quiz + "-" + day, title: title + " Complete", description: correct + "/" + total + " correct, score " + score + ".", credits: 25, key: "", grantedAt: now, grantedBy: "quiz" });
+    const account = { credits, awards, accessKeys };
+    tx.set(userRef, { ...account, account, rewardsUpdatedAt: now, rewardsUpdatedBy: "quiz" }, { merge: true });
+    tx.set(claimRef, { game: "quiz", quiz, uid: user.uid, score, correct, total, credits: 25, day, createdAt: now });
+    result = { alreadyClaimed: false, credits };
+  });
+  return result;
+}
+
+async function grantTopSnookerBreak(user, rawClaim) {
+  rawClaim = rawClaim && typeof rawClaim === "object" ? rawClaim : {};
+  const attemptId = rewardText(rawClaim.attemptId, 80).toLowerCase();
+  const breakScore = Math.floor(Number(rawClaim.break));
+  if (!/^[a-z0-9-]{12,80}$/.test(attemptId)) throw Object.assign(new Error("Invalid break attempt"), { status: 400 });
+  if (!Number.isFinite(breakScore) || breakScore < 1 || breakScore > 147) throw Object.assign(new Error("Invalid break score"), { status: 400 });
+  if (!firestore) throw Object.assign(new Error("Firebase reward storage is not configured on this server"), { status: 503 });
+  const claimId = crypto.createHash("sha256").update("topsnooker-break|" + user.uid + "|" + attemptId).digest("hex");
+  const claimRef = firestore.collection("rewardClaims").doc(claimId);
+  const userRef = firestore.collection(ONEPASS_USERS_COLLECTION).doc(user.uid);
+  let result;
+  await firestore.runTransaction(async tx => {
+    const [claimSnap, userSnap] = await Promise.all([tx.get(claimRef), tx.get(userRef)]);
+    const data = userSnap.exists ? userSnap.data() || {} : {};
+    if (claimSnap.exists) { result = { alreadyClaimed: true, credits: Math.max(0, Number(data.credits) || 0) }; return; }
+    if (!userSnap.exists) throw Object.assign(new Error("Your Loony account profile was not found"), { status: 404 });
+    const awards = Array.isArray(data.awards) ? data.awards.slice(-200) : [];
+    const accessKeys = Array.isArray(data.accessKeys) ? data.accessKeys.map(String).filter(Boolean) : [];
+    const credits = Math.max(0, Number(data.credits) || 0) + breakScore;
+    const now = new Date().toISOString();
+    const account = { credits, awards, accessKeys };
+    tx.set(userRef, { ...account, account, rewardsUpdatedAt: now, rewardsUpdatedBy: "topsnooker-break" }, { merge: true });
+    tx.set(claimRef, { game: "topsnooker", type: "break", attemptId, uid: user.uid, break: breakScore, credits: breakScore, createdAt: now });
+    result = { alreadyClaimed: false, credits, awarded: breakScore };
   });
   return result;
 }
@@ -823,7 +898,13 @@ function persistRecord(key) {
       const r = records[key];
       if (!r || !r.userId) return;
       firestore.collection(ONEPASS_USERS_COLLECTION).doc(r.userId).set({
-        slimeSoccer: { wins: r.wins || 0, losses: r.losses || 0, games: r.games || 0 },
+        slimeSoccer: {
+          wins: r.wins || 0,
+          losses: r.losses || 0,
+          games: r.games || 0,
+          bestWinScore: r.bestWinScore || 0,
+          bestWinAgainst: r.bestWinAgainst || 0,
+        },
       }, { merge: true }).catch(e => console.error("OnePass Users write:", e.message));
     } else {
       firestore.collection(RECORDS_COLLECTION).doc(key).set(records[key]).catch(e => console.error("Firestore write:", e.message));
@@ -838,7 +919,7 @@ function cleanName(raw) {
 function getOrCreateRecord(name) {
   const key = name.toLowerCase();
   if (usingOnePassUsers) return records[key] || null;
-  if (!records[key]) records[key] = { name, wins: 0, losses: 0, games: 0 };
+  if (!records[key]) records[key] = { name, wins: 0, losses: 0, games: 0, bestWinScore: 0, bestWinAgainst: 0 };
   return records[key];
 }
 function findPlayerRecord(raw) {
@@ -854,13 +935,22 @@ function findPlayerRecord(raw) {
   }
   return null;
 }
-function recordResult(name, outcome) { // outcome: "win" | "loss" | "draw"
+function recordResult(name, outcome, scoreFor, scoreAgainst) { // outcome: "win" | "loss" | "draw"
   if (!name) return;
   const key = name.toLowerCase();
   const r = getOrCreateRecord(name);
   if (!r) return;
   r.games++;
-  if (outcome === "win") r.wins++;
+  if (outcome === "win") {
+    r.wins++;
+    scoreFor = Math.max(0, Math.floor(Number(scoreFor) || 0));
+    scoreAgainst = Math.max(0, Math.floor(Number(scoreAgainst) || 0));
+    if (scoreFor > (r.bestWinScore || 0) ||
+        (scoreFor === (r.bestWinScore || 0) && scoreAgainst < (Number.isFinite(r.bestWinAgainst) ? r.bestWinAgainst : Infinity))) {
+      r.bestWinScore = scoreFor;
+      r.bestWinAgainst = scoreAgainst;
+    }
+  }
   else if (outcome === "loss") r.losses++;
   persistRecord(key);
 }
@@ -1117,11 +1207,14 @@ function recordGameResult(room) {
     const seatSide = { LA: "left", LK: "left", RA: "right", RK: "right" };
     QUAD_SEATS.forEach(s => {
       const ws = room.seats[s];
-      if (ws && ws.playerName) recordResult(ws.playerName, outcomeFor(seatSide[s]));
+      if (ws && ws.playerName) {
+        const side = seatSide[s];
+        recordResult(ws.playerName, outcomeFor(side), side === "left" ? left : right, side === "left" ? right : left);
+      }
     });
   } else {
-    if (room.host && room.host.playerName) recordResult(room.host.playerName, outcomeFor("left"));
-    if (room.guest && room.guest.playerName) recordResult(room.guest.playerName, outcomeFor("right"));
+    if (room.host && room.host.playerName) recordResult(room.host.playerName, outcomeFor("left"), left, right);
+    if (room.guest && room.guest.playerName) recordResult(room.guest.playerName, outcomeFor("right"), right, left);
   }
 }
 
@@ -1709,6 +1802,26 @@ app.post("/api/loony-rewards/game-win", async (req, res) => {
     res.status(error.status || (authError ? 401 : 500)).json({ ok: false, error: String(error.message || error).slice(0, 220) });
   }
 });
+app.post("/api/loony-rewards/quiz-complete", async (req, res) => {
+  try {
+    const user = await verifiedLoonyUser(req);
+    const result = await grantQuizCompletion(user, req.body);
+    res.json({ ok: true, result });
+  } catch (error) {
+    const authError = /token|sign in|authentication/i.test(error.message || "");
+    res.status(error.status || (authError ? 401 : 500)).json({ ok: false, error: String(error.message || error).slice(0, 220) });
+  }
+});
+app.post("/api/loony-rewards/break", async (req, res) => {
+  try {
+    const user = await verifiedLoonyUser(req);
+    const result = await grantTopSnookerBreak(user, req.body);
+    res.json({ ok: true, result });
+  } catch (error) {
+    const authError = /token|sign in|authentication/i.test(error.message || "");
+    res.status(error.status || (authError ? 401 : 500)).json({ ok: false, error: String(error.message || error).slice(0, 220) });
+  }
+});
 app.post("/api/loony-rewards/hall-of-fame", async (req, res) => {
   try {
     const user = await verifiedTopSnookerUser(req);
@@ -1742,7 +1855,8 @@ app.get("/api/record", (req, res) => {
 app.get("/api/halloffame", (req, res) => {
   const players = uniqueRecords()
     .map(publicRecord)
-    .sort((a, b) => b.wins - a.wins || a.losses - b.losses || b.games - a.games || a.name.localeCompare(b.name))
+    .filter(player => player.wins > 0)
+    .sort((a, b) => b.wins - a.wins || b.bestWinScore - a.bestWinScore || a.losses - b.losses || b.games - a.games || a.name.localeCompare(b.name))
     .slice(0, 50);
   res.json({ players });
 });
