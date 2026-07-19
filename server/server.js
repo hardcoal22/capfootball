@@ -609,6 +609,59 @@ async function grantCrosswordWin(user, rawClaim) {
   return result;
 }
 
+async function grantDrawingAccuracyPoints(user, rawClaim) {
+  rawClaim = rawClaim && typeof rawClaim === "object" ? rawClaim : {};
+  const attemptId = rewardText(rawClaim.attemptId, 80).toLowerCase();
+  const score = Math.floor(Number(rawClaim.score));
+  const accuracy = Math.floor(Number(rawClaim.accuracy));
+  const proportion = Math.floor(Number(rawClaim.proportion));
+  const effort = Math.floor(Number(rawClaim.effort));
+  const passAccuracy = Math.floor(Number(rawClaim.passAccuracy));
+  const durationMs = Math.floor(Number(rawClaim.durationMs));
+  if (!/^[a-z0-9-]{16,80}$/.test(attemptId)) throw Object.assign(new Error("Invalid drawing attempt"), { status: 400 });
+  if (![score, accuracy, proportion, effort, passAccuracy, durationMs].every(Number.isFinite) || score < 1 || score > 100 || accuracy < 0 || accuracy > 100 || proportion < 0 || proportion > 100 || effort < 0 || effort > 100 || passAccuracy < 1 || passAccuracy > 100) {
+    throw Object.assign(new Error("Invalid drawing score"), { status: 400 });
+  }
+  if (accuracy < passAccuracy) throw Object.assign(new Error("That drawing did not reach the configured passing accuracy"), { status: 409 });
+  if (durationMs < 500 || durationMs > 120000) throw Object.assign(new Error("Invalid drawing duration"), { status: 400 });
+  if (!firestore) throw Object.assign(new Error("Firebase reward storage is not configured on this server"), { status: 503 });
+
+  const day = new Date().toISOString().slice(0, 10);
+  const claimId = crypto.createHash("sha256").update("drawingaccuracy|" + user.uid + "|" + attemptId).digest("hex");
+  const dailyId = crypto.createHash("sha256").update("drawingaccuracy-day|" + user.uid + "|" + day).digest("hex");
+  const claimRef = firestore.collection("rewardClaims").doc(claimId);
+  const dailyRef = firestore.collection("rewardDrawingDaily").doc(dailyId);
+  const userRef = firestore.collection(ONEPASS_USERS_COLLECTION).doc(user.uid);
+  let result;
+  await firestore.runTransaction(async tx => {
+    const [claimSnap, dailySnap, userSnap] = await Promise.all([tx.get(claimRef), tx.get(dailyRef), tx.get(userRef)]);
+    const data = userSnap.exists ? userSnap.data() || {} : {};
+    if (claimSnap.exists) {
+      result = { alreadyClaimed: true, credits: Math.max(0, Number(data.credits) || 0), awarded: 0 };
+      return;
+    }
+    if (!userSnap.exists) throw Object.assign(new Error("Your Loony account profile was not found"), { status: 404 });
+    const dailyAwarded = dailySnap.exists ? Math.max(0, Number(dailySnap.data().credits) || 0) : 0;
+    const awarded = Math.max(0, Math.min(score, 500 - dailyAwarded));
+    if (!awarded) {
+      const now = new Date().toISOString();
+      tx.set(claimRef, { game: "drawingaccuracy", attemptId, uid: user.uid, score, accuracy, proportion, effort, durationMs, credits: 0, day, dailyLimit: true, createdAt: now });
+      result = { alreadyClaimed: false, dailyLimit: true, credits: Math.max(0, Number(data.credits) || 0), awarded: 0 };
+      return;
+    }
+    const awards = Array.isArray(data.awards) ? data.awards.slice(-200) : [];
+    const accessKeys = Array.isArray(data.accessKeys) ? data.accessKeys.map(String).filter(Boolean) : [];
+    const credits = Math.max(0, Number(data.credits) || 0) + awarded;
+    const now = new Date().toISOString();
+    const account = { credits, awards, accessKeys };
+    tx.set(userRef, { ...account, account, rewardsUpdatedAt: now, rewardsUpdatedBy: "drawingaccuracy" }, { merge: true });
+    tx.set(dailyRef, { game: "drawingaccuracy", uid: user.uid, day, credits: dailyAwarded + awarded, updatedAt: now }, { merge: true });
+    tx.set(claimRef, { game: "drawingaccuracy", attemptId, uid: user.uid, score, accuracy, proportion, effort, passAccuracy, durationMs, credits: awarded, day, createdAt: now });
+    result = { alreadyClaimed: false, dailyLimit: awarded < score, credits, awarded };
+  });
+  return result;
+}
+
 async function grantTopSnookerHallOfFame(user, rawClaim) {
   const score = Math.floor(Number(rawClaim && rawClaim.break));
   const recordDate = Math.floor(Number(rawClaim && rawClaim.date));
@@ -1795,11 +1848,51 @@ app.post("/api/loony-rewards/game-win", async (req, res) => {
     let result;
     if (game === "topsnooker") result = await grantTopSnookerWin(user, req.body && req.body.matchId);
     else if (game === "crossword") result = await grantCrosswordWin(user, req.body);
+    else if (game === "drawingaccuracy") result = await grantDrawingAccuracyPoints(user, req.body);
     else throw Object.assign(new Error("That game does not support automatic win rewards"), { status: 400 });
     res.json({ ok: true, result });
   } catch (error) {
     const authError = /token|sign in|authentication/i.test(error.message || "");
     res.status(error.status || (authError ? 401 : 500)).json({ ok: false, error: String(error.message || error).slice(0, 220) });
+  }
+});
+app.post("/api/drawing-grade", async (req, res) => {
+  try {
+    await verifiedLoonyUser(req);
+    const metrics = req.body && req.body.metrics;
+    if (!metrics || !Number.isFinite(Number(metrics.score)) || !Number.isFinite(Number(metrics.accuracy))) {
+      throw Object.assign(new Error("Invalid drawing comparison"), { status: 400 });
+    }
+    const score = Math.max(0, Math.min(100, Math.round(Number(metrics.score))));
+    const accuracy = Math.max(0, Math.min(100, Math.round(Number(metrics.accuracy))));
+    const proportion = Math.max(0, Math.min(100, Math.round(Number(metrics.proportion) || 0)));
+    const effort = Math.max(0, Math.min(100, Math.round(Number(metrics.effort) || 0)));
+    const speed = Math.max(0, Math.min(100, Math.round(Number(metrics.speed) || 0)));
+    const passAccuracy = Math.max(1, Math.min(100, Math.round(Number(metrics.passAccuracy) || 70)));
+    const circleQuality = Math.max(0, Math.min(100, Math.round((Number(metrics.circleQuality) || 0) * 100)));
+    const fallback = {
+      score,
+      verdict: accuracy >= passAccuracy ? "You advance to the next drawing!" : "Keep working on this drawing.",
+      matched: `Accuracy ${accuracy}%, proportions ${proportion}%, and effort ${effort}%.`,
+      improve: metrics.circleTarget && circleQuality < 72 ? "Keep the curve at a more even distance from its center so it looks rounder." : "Refine the silhouette and the most distinctive details."
+    };
+    if (!deepSeekApiKey) return res.json(fallback);
+    const prompt = `You give short, encouraging feedback for a drawing-copy game. The trusted local comparator produced score=${score}/100, accuracy=${accuracy}%, proportions=${proportion}%, speed=${speed}%, effort=${effort}%, circleTarget=${Boolean(metrics.circleTarget)}, circleRoundnessQuality=${circleQuality}%, passingAccuracy=${passAccuracy}%. Acknowledge genuine effort whenever effort is at least 50%. If circleTarget is true, discuss whether the curve looks round and even. Never change or invent a score. Return JSON only with verdict, matched, improve; each value must be one short sentence.`;
+    const response = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + deepSeekApiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: DEEPSEEK_MODEL, messages: [{ role: "user", content: prompt }], response_format: { type: "json_object" }, thinking: { type: "disabled" }, max_tokens: 180, temperature: 0.2, stream: false }),
+      signal: AbortSignal.timeout(30000)
+    });
+    if (!response.ok) return res.json(fallback);
+    const data = await response.json();
+    const raw = String(data?.choices?.[0]?.message?.content || "{}").replace(/^```(?:json)?\s*|\s*```$/g, "");
+    let feedback = {};
+    try { feedback = JSON.parse(raw); } catch {}
+    res.json({ score, verdict: rewardText(feedback.verdict, 180) || fallback.verdict, matched: rewardText(feedback.matched, 220) || fallback.matched, improve: rewardText(feedback.improve, 220) || fallback.improve });
+  } catch (error) {
+    const authError = /token|sign in|authentication/i.test(error.message || "");
+    res.status(error.status || (authError ? 401 : 500)).json({ error: String(error.message || error).slice(0, 220) });
   }
 });
 app.post("/api/loony-rewards/quiz-complete", async (req, res) => {
